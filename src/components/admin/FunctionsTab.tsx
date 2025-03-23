@@ -79,22 +79,17 @@ const FunctionsTab: React.FC<FunctionsTabProps> = ({
   // Edit function
   const editFunction = (index: number) => {
     const functionToEdit = functions[index];
-    let functionParams: Record<string, any> = {};
+    let parameterString: string;
     
     if (typeof functionToEdit.parameters === 'string') {
-      try {
-        functionParams = JSON.parse(functionToEdit.parameters);
-      } catch (e) {
-        functionParams = {};
-        console.error("Error parsing function parameters:", e);
-      }
+      parameterString = functionToEdit.parameters;
     } else {
-      functionParams = functionToEdit.parameters as Record<string, any>;
+      parameterString = JSON.stringify(functionToEdit.parameters, null, 2);
     }
     
     setNewFunction({
       ...functionToEdit,
-      parameters: functionParams
+      parameters: parameterString
     });
     
     setEditingFunctionIndex(index);
