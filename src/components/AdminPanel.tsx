@@ -146,7 +146,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
     let parsedParams: Record<string, any> = {};
     try {
       if (typeof newFunction.parameters === 'string') {
-        parsedParams = JSON.parse(newFunction.parameters as string);
+        parsedParams = JSON.parse(newFunction.parameters);
       } else {
         parsedParams = newFunction.parameters as Record<string, any>;
       }
@@ -155,9 +155,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
       return;
     }
     
-    const functionToSave = {
-      ...newFunction,
-      parameters: parsedParams,
+    const functionToSave: AgentFunction = {
+      name: newFunction.name,
+      description: newFunction.description,
+      webhook: newFunction.webhook,
+      parameters: parsedParams
     };
     
     if (editingFunctionIndex !== null) {
@@ -185,12 +187,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
   // Edit function
   const editFunction = (index: number) => {
     const functionToEdit = functions[index];
+    let functionParams: Record<string, any>;
+    
+    if (typeof functionToEdit.parameters === 'string') {
+      try {
+        functionParams = JSON.parse(functionToEdit.parameters);
+      } catch (e) {
+        functionParams = {};
+        console.error("Error parsing function parameters:", e);
+      }
+    } else {
+      functionParams = functionToEdit.parameters as Record<string, any>;
+    }
+    
     setNewFunction({
       ...functionToEdit,
-      parameters: typeof functionToEdit.parameters === 'object' 
-        ? functionToEdit.parameters 
-        : JSON.parse(functionToEdit.parameters as string),
+      parameters: functionParams
     });
+    
     setEditingFunctionIndex(index);
   };
   
