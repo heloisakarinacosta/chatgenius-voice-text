@@ -143,12 +143,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
     }
     
     // Try to parse parameters
-    let parsedParams = {};
+    let parsedParams: Record<string, any> = {};
     try {
       if (typeof newFunction.parameters === 'string') {
-        parsedParams = JSON.parse(newFunction.parameters as any);
+        parsedParams = JSON.parse(newFunction.parameters as string);
       } else {
-        parsedParams = newFunction.parameters;
+        parsedParams = newFunction.parameters as Record<string, any>;
       }
     } catch (e) {
       toast.error("Invalid JSON parameters");
@@ -189,7 +189,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
       ...functionToEdit,
       parameters: typeof functionToEdit.parameters === 'object' 
         ? functionToEdit.parameters 
-        : JSON.parse(functionToEdit.parameters as any),
+        : JSON.parse(functionToEdit.parameters as string),
     });
     setEditingFunctionIndex(index);
   };
