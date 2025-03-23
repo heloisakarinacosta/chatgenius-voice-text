@@ -1,16 +1,16 @@
 
-interface OpenAIMessage {
+export interface OpenAIMessage {
   role: "user" | "assistant" | "system";
   content: string;
 }
 
-interface OpenAIFunction {
+export interface OpenAIFunction {
   name: string;
   description: string;
   parameters: Record<string, any>;
 }
 
-interface OpenAICompletionOptions {
+export interface OpenAICompletionOptions {
   messages: OpenAIMessage[];
   model?: string;
   temperature?: number;
@@ -18,7 +18,7 @@ interface OpenAICompletionOptions {
   stream?: boolean;
 }
 
-interface StreamCallbacks {
+export interface StreamCallbacks {
   onMessage?: (message: string) => void;
   onComplete?: (fullMessage: string) => void;
   onError?: (error: any) => void;

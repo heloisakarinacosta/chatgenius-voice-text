@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils";
 
 interface ChatBubbleProps {
   message: Message;
+  isTyping?: boolean;
 }
 
-const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
+const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isTyping = false }) => {
   const isUser = message.role === "user";
   const time = message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -26,8 +27,18 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
             : "bg-muted text-muted-foreground rounded-tl-none"
         )}
       >
-        <p className="text-sm md:text-base whitespace-pre-wrap break-words">{message.content}</p>
-        <span className="text-xs opacity-70 block text-right mt-1">{time}</span>
+        {isTyping ? (
+          <div className="flex space-x-1 items-center py-1">
+            <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-current rounded-full animate-pulse delay-150"></div>
+            <div className="w-2 h-2 bg-current rounded-full animate-pulse delay-300"></div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm md:text-base whitespace-pre-wrap break-words">{message.content}</p>
+            <span className="text-xs opacity-70 block text-right mt-1">{time}</span>
+          </>
+        )}
       </div>
     </div>
   );

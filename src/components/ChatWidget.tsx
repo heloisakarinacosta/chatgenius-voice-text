@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, X, MessageCircle, Volume2, Settings } from "lucide-react";
+import { Send, X, MessageCircle, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "@/contexts/ChatContext";
 import { cn } from "@/lib/utils";
-import { callOpenAI, streamOpenAI, generateSpeech } from "@/utils/openai";
+import { callOpenAI, streamOpenAI, generateSpeech, OpenAIMessage } from "@/utils/openai";
 import ChatBubble from "./ChatBubble";
 import VoiceChat from "./VoiceChat";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [position, setPosition] = useState<string>("");
@@ -67,11 +68,15 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setInputValue("");
     addMessage(userMessage, "user");
     setIsProcessing(true);
+    setIsTyping(true);
     
     // Prepare conversation history
-    const conversationHistory = [
+    const conversationHistory: OpenAIMessage[] = [
       { role: "system", content: agentConfig.systemPrompt },
-      ...messages.map(msg => ({ role: msg.role, content: msg.content })),
+      ...messages.map(msg => ({ 
+        role: msg.role as "user" | "assistant" | "system", 
+        content: msg.content 
+      })),
       { role: "user", content: userMessage },
     ];
     
@@ -108,6 +113,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             }
           },
           onComplete: async (fullMessage) => {
+            setIsTyping(false);
             // If message wasn't initialized in onMessage
             if (!assistantMessage) {
               addMessage(fullMessage, "assistant");
@@ -141,6 +147,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             setIsProcessing(false);
           },
           onError: (error) => {
+            setIsTyping(false);
             console.error("Error in AI response:", error);
             addMessage("I'm sorry, I encountered an error processing your request. Please try again.", "assistant");
             setIsProcessing(false);
@@ -149,6 +156,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         }
       );
     } catch (error) {
+      setIsTyping(false);
       console.error("Error sending message:", error);
       addMessage("I'm sorry, I encountered an error processing your request. Please try again.", "assistant");
       setIsProcessing(false);
@@ -227,17 +235,17 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               <ChatBubble key={message.id} message={message} />
             ))
           )}
-          {isProcessing && (
-            <div className="flex justify-start mb-4 message-appear">
-              <div className="bg-muted text-muted-foreground px-4 py-2 rounded-xl rounded-tl-none">
-                <div className="loader">
-                  <div className="bg-muted-foreground"></div>
-                  <div className="bg-muted-foreground"></div>
-                  <div className="bg-muted-foreground"></div>
-                  <div className="bg-muted-foreground"></div>
-                </div>
-              </div>
-            </div>
+          {isTyping && (
+            <ChatBubble 
+              key="typing-indicator" 
+              message={{
+                id: "typing",
+                role: "assistant",
+                content: "",
+                timestamp: new Date()
+              }} 
+              isTyping={true}
+            />
           )}
           <div ref={messagesEndRef} />
         </div>
