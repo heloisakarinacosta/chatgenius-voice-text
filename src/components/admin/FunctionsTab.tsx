@@ -14,12 +14,19 @@ interface FunctionsTabProps {
   saveAgentConfig: () => void;
 }
 
+interface FunctionFormState {
+  name: string;
+  description: string;
+  parameters: Record<string, any> | string;
+  webhook: string;
+}
+
 const FunctionsTab: React.FC<FunctionsTabProps> = ({ 
   functions, 
   setFunctions,
   saveAgentConfig
 }) => {
-  const [newFunction, setNewFunction] = useState<AgentFunction>({
+  const [newFunction, setNewFunction] = useState<FunctionFormState>({
     name: "",
     description: "",
     parameters: {},
@@ -88,7 +95,9 @@ const FunctionsTab: React.FC<FunctionsTabProps> = ({
     }
     
     setNewFunction({
-      ...functionToEdit,
+      name: functionToEdit.name,
+      description: functionToEdit.description,
+      webhook: functionToEdit.webhook,
       parameters: parameterString
     });
     
@@ -101,6 +110,14 @@ const FunctionsTab: React.FC<FunctionsTabProps> = ({
     updatedFunctions.splice(index, 1);
     setFunctions(updatedFunctions);
     toast.success("Function deleted");
+  };
+
+  // Function to handle parameter changes
+  const handleParameterChange = (value: string) => {
+    setNewFunction({
+      ...newFunction,
+      parameters: value
+    });
   };
 
   return (
@@ -161,10 +178,7 @@ const FunctionsTab: React.FC<FunctionsTabProps> = ({
               value={typeof newFunction.parameters === 'object' 
                 ? JSON.stringify(newFunction.parameters, null, 2) 
                 : newFunction.parameters as string}
-              onChange={(e) => setNewFunction({
-                ...newFunction,
-                parameters: e.target.value,
-              })}
+              onChange={(e) => handleParameterChange(e.target.value)}
               rows={5}
               placeholder={`{
   "type": "object",
