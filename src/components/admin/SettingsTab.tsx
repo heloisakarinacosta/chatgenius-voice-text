@@ -4,7 +4,7 @@ import { Card, CardHeader, CardContent, CardDescription, CardTitle, CardFooter }
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { createHash } from "crypto-js/sha256";
+import { SHA256 } from "crypto-js";
 import { toast } from "sonner";
 
 interface SettingsTabProps {
@@ -25,7 +25,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
   // Handle password change
   const handlePasswordChange = () => {
     // Check if current password is correct
-    const currentHash = createHash(currentPassword).toString();
+    const currentHash = SHA256(currentPassword).toString();
     
     if (currentHash !== adminConfig.passwordHash) {
       toast.error("Current password is incorrect");
@@ -43,7 +43,7 @@ const SettingsTab: React.FC<SettingsTabProps> = ({
     }
     
     // Update password
-    const newHash = createHash(newPassword).toString();
+    const newHash = SHA256(newPassword).toString();
     updateAdminConfig({
       passwordHash: newHash,
     });

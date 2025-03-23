@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Lock } from "lucide-react";
-import { createHash } from "crypto-js/sha256";
+import { SHA256 } from "crypto-js";
 import { useChat } from "@/contexts/ChatContext";
 import { toast } from "sonner";
 
@@ -31,8 +31,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
     
     // Simulate network delay
     setTimeout(() => {
-      // Check credentials
-      if (username === adminConfig.username && createHash(password).toString() === adminConfig.passwordHash) {
+      // Check credentials - using SHA256 instead of createHash
+      if (username === adminConfig.username && SHA256(password).toString() === adminConfig.passwordHash) {
         toast.success("Login successful");
         onLogin();
       } else {
