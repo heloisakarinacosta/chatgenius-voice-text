@@ -14,13 +14,19 @@ const queryClient = new QueryClient();
 
 const App = () => {
   // Check for OpenAI API key in localStorage
-  const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem("openai_api_key") || "";
-  });
+  const [apiKey, setApiKey] = useState<string>("");
+
+  // Load API key from localStorage on component mount
+  useEffect(() => {
+    const savedApiKey = localStorage.getItem("openai_api_key") || "";
+    setApiKey(savedApiKey);
+  }, []);
 
   // Update localStorage when API key changes
   useEffect(() => {
-    localStorage.setItem("openai_api_key", apiKey);
+    if (apiKey) {
+      localStorage.setItem("openai_api_key", apiKey);
+    }
   }, [apiKey]);
 
   return (
