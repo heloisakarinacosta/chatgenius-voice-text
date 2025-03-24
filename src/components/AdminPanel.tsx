@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MessageCircle, Terminal, Settings, Code, FileText, AlertTriangle, Database } from "lucide-react";
@@ -75,8 +74,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
         <Alert variant="default" className="mb-6 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
           <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
           <AlertDescription className="text-yellow-600 dark:text-yellow-400">
-            Não foi possível conectar ao banco de dados MariaDB. Usando armazenamento local como fallback.
-            Verifique as configurações de conexão do banco de dados em .env.
+            Usando armazenamento local para os dados. Para usar o banco de dados MariaDB, configure um servidor de API backend.
           </AlertDescription>
         </Alert>
       )}

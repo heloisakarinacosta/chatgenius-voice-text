@@ -1,7 +1,6 @@
-
 import React, { createContext, useState, useContext, useCallback, useEffect, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
-import * as db from "../services/database";
+import * as db from "../services/databaseService";
 import { toast } from "sonner";
 
 export interface Message {
@@ -121,7 +120,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isDbConnected, setIsDbConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Inicializa a conexão com o banco de dados
   useEffect(() => {
     const initializeDb = async () => {
       try {
@@ -129,10 +127,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsDbConnected(connected);
         
         if (connected) {
-          // Carrega dados do banco de dados
           await loadDataFromDb();
         } else {
-          // Carrega dados do localStorage como fallback
           loadDataFromLocalStorage();
         }
         
@@ -148,28 +144,23 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initializeDb();
   }, []);
 
-  // Carrega dados do banco de dados
   const loadDataFromDb = async () => {
     try {
-      // Carrega configurações do widget
       const widgetConfigData = await db.getWidgetConfig();
       if (widgetConfigData) {
         setWidgetConfig(widgetConfigData as WidgetConfig);
       }
       
-      // Carrega configurações do agente
       const agentConfigData = await db.getAgentConfig();
       if (agentConfigData) {
         setAgentConfig(agentConfigData as AgentConfig);
       }
       
-      // Carrega configurações de admin
       const adminConfigData = await db.getAdminConfig();
       if (adminConfigData) {
         setAdminConfig(adminConfigData as AdminConfig);
       }
       
-      // Carrega conversas
       const conversationsData = await db.getConversations();
       if (conversationsData && conversationsData.length > 0) {
         setConversations(conversationsData as Conversation[]);
@@ -181,7 +172,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Carrega dados do localStorage como fallback
   const loadDataFromLocalStorage = () => {
     const storedWidgetConfig = localStorage.getItem("widgetConfig");
     const storedAgentConfig = localStorage.getItem("agentConfig");
@@ -193,7 +183,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (storedAdminConfig) setAdminConfig(JSON.parse(storedAdminConfig));
     if (storedConversations) {
       const parsedConversations = JSON.parse(storedConversations);
-      // Convert string timestamps back to Date objects
       const conversationsWithDates = parsedConversations.map((conv: any) => ({
         ...conv,
         createdAt: new Date(conv.createdAt),
@@ -206,14 +195,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Salva configurações quando elas mudam
   useEffect(() => {
     if (!isLoading) {
       if (isDbConnected) {
-        // Atualiza no banco de dados
         db.updateWidgetConfig(widgetConfig);
       } else {
-        // Salva no localStorage como fallback
         localStorage.setItem("widgetConfig", JSON.stringify(widgetConfig));
       }
     }
@@ -222,10 +208,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     if (!isLoading) {
       if (isDbConnected) {
-        // Atualiza no banco de dados
         db.updateAgentConfig(agentConfig);
       } else {
-        // Salva no localStorage como fallback
         localStorage.setItem("agentConfig", JSON.stringify(agentConfig));
       }
     }
@@ -234,10 +218,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     if (!isLoading) {
       if (isDbConnected) {
-        // Atualiza no banco de dados
         db.updateAdminConfig(adminConfig);
       } else {
-        // Salva no localStorage como fallback
         localStorage.setItem("adminConfig", JSON.stringify(adminConfig));
       }
     }
@@ -245,8 +227,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     if (!isLoading && !isDbConnected) {
-      // Salva conversas no localStorage apenas como fallback
-      // Deep clone to avoid circular references
       const conversationsForStorage = conversations.map(conv => ({
         ...conv,
         messages: conv.messages.map(msg => ({
@@ -270,7 +250,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setCurrentConversationId(newId);
     
     if (isDbConnected) {
-      // Cria a conversa no banco de dados
       db.createConversation(newId);
     }
     
@@ -305,7 +284,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
     
     if (isDbConnected && currentConversationId) {
-      // Adiciona a mensagem no banco de dados
       db.addMessage(currentConversationId, newMessage);
     }
   }, [currentConversationId, startNewConversation, isDbConnected]);
@@ -325,7 +303,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAdminConfig(prev => ({ ...prev, ...config }));
   }, []);
 
-  // Adiciona um arquivo de treinamento
   const addTrainingFile = useCallback(async (file: File): Promise<void> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -347,7 +324,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }));
           
           if (isDbConnected) {
-            // Adiciona o arquivo no banco de dados
             await db.addTrainingFile(newFile);
           }
           
@@ -365,7 +341,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [isDbConnected]);
 
-  // Remove um arquivo de treinamento
   const removeTrainingFile = useCallback((id: string) => {
     setAgentConfig(prev => ({
       ...prev,
@@ -373,17 +348,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
     
     if (isDbConnected) {
-      // Remove o arquivo do banco de dados
       db.removeTrainingFile(id);
     }
   }, [isDbConnected]);
 
-  // Obtém mensagens para a conversa atual
   const messages = currentConversationId 
     ? conversations.find(conv => conv.id === currentConversationId)?.messages || []
     : [];
 
-  // Mostra indicador de carregamento enquanto os dados são inicializados
   if (isLoading) {
     return <div>Loading...</div>;
   }
