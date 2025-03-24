@@ -70,12 +70,17 @@ export const initDatabase = async () => {
     
     if (!response.ok) {
       console.error('API returned error status:', response.status);
+      isDbConnected = false;
       throw new Error('API is not available');
     }
     
     const data = await response.json();
     console.log('Backend health check response:', data);
-    isDbConnected = data.dbConnected;
+    isDbConnected = data.dbConnected === true;
+    
+    if (!isDbConnected) {
+      console.log('Database not connected in backend, falling back to localStorage');
+    }
     
     // Reset retry count on successful connection
     if (isDbConnected) {
@@ -268,13 +273,41 @@ export const updateAdminConfig = async (config: any) => {
 
 // Conversation functions
 export const getConversations = async () => {
+  // Add request tracking to prevent excessive calls
+  const requestId = `conversations-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate request prevented for conversations');
+    return localDb.getConversations();
+  }
+  
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/conversation`);
-      if (!response.ok) throw new Error('Failed to fetch conversations');
-      return await response.json();
+      inProgressRequests.add(requestId);
+      console.log('Fetching conversations from API');
+      const response = await fetchWithTimeout(`${API_BASE_URL}/conversation`, {
+        headers: { 'Cache-Control': 'no-cache' },
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) {
+        console.log(`API returned error status for conversations: ${response.status}`);
+        throw new Error('Failed to fetch conversations');
+      }
+      
+      const conversations = await response.json();
+      console.log(`Retrieved ${conversations.length} conversations from API`);
+      inProgressRequests.delete(requestId);
+      return conversations;
     } catch (error) {
       console.error('Error fetching conversations from API:', error);
+      inProgressRequests.delete(requestId);
+      
+      // If we get a connection error, mark the database as disconnected
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        console.log('Connection to API lost, switching to localStorage');
+        isDbConnected = false;
+      }
+      
       return localDb.getConversations();
     }
   }
@@ -378,6 +411,13 @@ export const getTrainingFiles = async () => {
     } catch (error) {
       console.error('Error fetching training files from API:', error);
       inProgressRequests.delete(requestId);
+      
+      // If we get a connection error, mark the database as disconnected
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        console.log('Connection to API lost, switching to localStorage');
+        isDbConnected = false;
+      }
+      
       return localFiles;
     }
   }
@@ -421,6 +461,13 @@ export const addTrainingFile = async (file: any) => {
     } catch (error) {
       console.error('Error adding training file via API:', error);
       inProgressRequests.delete(requestId);
+      
+      // If we get a connection error, mark the database as disconnected
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        console.log('Connection to API lost, switching to localStorage');
+        isDbConnected = false;
+      }
+      
       // Already added to localStorage, so return true
       return true;
     }
@@ -462,6 +509,13 @@ export const removeTrainingFile = async (id: string) => {
     } catch (error) {
       console.error('Error removing training file via API:', error);
       inProgressRequests.delete(requestId);
+      
+      // If we get a connection error, mark the database as disconnected
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        console.log('Connection to API lost, switching to localStorage');
+        isDbConnected = false;
+      }
+      
       // Already removed from localStorage, so return true
       return true;
     }

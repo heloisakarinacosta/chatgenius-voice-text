@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { SHA256 } from "crypto-js";
 import LoginForm from "@/components/LoginForm";
@@ -17,10 +17,18 @@ const Admin = () => {
   const [loginAttempts, setLoginAttempts] = useState(0);
   const { adminConfig, loadData, isDbConnected } = useChat();
   const navigate = useNavigate();
+  
+  // Use refs to track initialization state
+  const initializationDone = useRef(false);
 
-  // Initialize and check for API key
+  // Initialize and check for API key - with safeguards against re-runs
   useEffect(() => {
+    // Prevent multiple initializations
+    if (initializationDone.current) return;
+    
     const initializeData = async () => {
+      if (initializationDone.current) return;
+      
       try {
         console.log('Initializing admin page...');
         
@@ -37,6 +45,7 @@ const Admin = () => {
           console.log('No API key found in admin config');
         }
         
+        initializationDone.current = true;
       } catch (error) {
         console.error('Error initializing admin page:', error);
       } finally {
@@ -45,7 +54,19 @@ const Admin = () => {
     };
     
     initializeData();
-  }, [loadData, adminConfig]);
+    
+    // Cleanup function
+    return () => {
+      initializationDone.current = true;
+    };
+  }, []); // Empty dependency array to run only once
+  
+  // Update API key when adminConfig changes, but only after initial load
+  useEffect(() => {
+    if (!isLoading && adminConfig && adminConfig.apiKey) {
+      setApiKey(adminConfig.apiKey);
+    }
+  }, [adminConfig, isLoading]);
 
   // Refresh page to check connection status
   const refreshPage = () => {

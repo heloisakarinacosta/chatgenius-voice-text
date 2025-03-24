@@ -4,11 +4,30 @@ const router = express.Router();
 const db = require('../database');
 const { v4: uuidv4 } = require('uuid');
 
+// Tracking for request debouncing
+const requestCache = new Map();
+const CACHE_TTL = 2000; // 2 seconds
+
 // Get all conversations
 router.get('/', async (req, res) => {
+  // Simple request deduplication
+  const cacheKey = 'get-all-conversations';
+  const now = Date.now();
+  const lastRequest = requestCache.get(cacheKey);
+  
+  if (lastRequest && (now - lastRequest.timestamp < CACHE_TTL)) {
+    console.log('Debouncing duplicate request for conversations');
+    return res.json(lastRequest.data || []);
+  }
+  
   try {
     const pool = db.getDbConnection();
     if (!pool) {
+      console.log('Database not connected, returning empty conversations array');
+      requestCache.set(cacheKey, { 
+        timestamp: now,
+        data: []
+      });
       return res.status(503).json({ error: 'Database not connected' });
     }
     
@@ -37,15 +56,31 @@ router.get('/', async (req, res) => {
       })
     );
     
+    // Cache the result
+    requestCache.set(cacheKey, {
+      timestamp: now,
+      data: conversationsWithMessages
+    });
+    
     res.json(conversationsWithMessages);
   } catch (error) {
     console.error('Error fetching conversations:', error);
+    
+    // Still cache the error state to prevent further requests
+    requestCache.set(cacheKey, {
+      timestamp: now,
+      data: []
+    });
+    
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
 
 // Create a new conversation
 router.post('/', async (req, res) => {
+  const cacheKey = 'get-all-conversations';
+  requestCache.delete(cacheKey); // Invalidate cache on write
+  
   try {
     const id = req.body.id || uuidv4();
     
@@ -72,6 +107,9 @@ router.post('/', async (req, res) => {
 
 // Add message to conversation
 router.post('/:id/messages', async (req, res) => {
+  const cacheKey = 'get-all-conversations';
+  requestCache.delete(cacheKey); // Invalidate cache on write
+  
   try {
     const { id } = req.params;
     const { role, content } = req.body;
