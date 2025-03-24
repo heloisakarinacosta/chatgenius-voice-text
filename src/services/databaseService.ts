@@ -11,12 +11,16 @@ let isDbConnected = false;
 // Initialize database connection - this will try to connect to the backend API
 export const initDatabase = async () => {
   try {
+    console.log('Attempting to connect to backend API at:', API_BASE_URL);
     const response = await fetch(`${API_BASE_URL}/health`);
+    
     if (!response.ok) {
+      console.error('API returned error status:', response.status);
       throw new Error('API is not available');
     }
     
     const data = await response.json();
+    console.log('Backend health check response:', data);
     isDbConnected = data.dbConnected;
     
     console.log(`Using ${isDbConnected ? 'backend API with database' : 'localStorage fallback'} for data storage`);

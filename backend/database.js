@@ -1,13 +1,33 @@
 
 const mysql = require('mysql2/promise');
+const fs = require('fs');
+const path = require('path');
 
 // Database connection configuration
 let pool = null;
 let isDbConnected = false;
 
+// Ensure data directory exists
+const ensureDataDirectory = () => {
+  const dataDir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    console.log('Creating data directory');
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  return dataDir;
+};
+
 // Initialize database connection pool
 const initDatabase = async () => {
   try {
+    // Ensure the data directory exists for fallback storage
+    ensureDataDirectory();
+    
+    console.log('Initializing database connection with the following parameters:');
+    console.log('Host:', process.env.DB_HOST || 'localhost');
+    console.log('User:', process.env.DB_USER || 'root');
+    console.log('Database:', process.env.DB_NAME || 'chat_assistant');
+    
     pool = mysql.createPool({
       host: process.env.DB_HOST || 'localhost',
       user: process.env.DB_USER || 'root',
@@ -16,7 +36,7 @@ const initDatabase = async () => {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      // Adicionar estas configurações para lidar com diferentes métodos de autenticação
+      // Add these configurations to handle different authentication methods
       authPlugins: {
         mysql_native_password: () => ({ type: 'mysql_native_password' }),
         mysql_clear_password: () => ({ type: 'mysql_clear_password' }),
@@ -39,6 +59,18 @@ const initDatabase = async () => {
     return true;
   } catch (error) {
     console.error('Database connection error:', error);
+    
+    // More detailed error logging depending on error type
+    if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      console.error('ACCESS DENIED: Check your username and password');
+    } else if (error.code === 'ER_BAD_DB_ERROR') {
+      console.error('DATABASE NOT FOUND: The specified database does not exist');
+      console.error('Create the database with: CREATE DATABASE chat_assistant;');
+    } else if (error.code === 'ECONNREFUSED') {
+      console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
+    }
+    
+    console.log('Using file-based fallback data storage');
     isDbConnected = false;
     return false;
   }
