@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, useCallback, useEffect, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as db from "../services/databaseService";
@@ -38,6 +39,10 @@ export interface AgentConfig {
   functions: AgentFunction[];
   voice: VoiceConfig;
   trainingFiles: TrainingFile[];
+  model: string;
+  maxTokens: number;
+  temperature: number;
+  detectEmotion: boolean;
 }
 
 export interface AgentFunction {
@@ -102,6 +107,10 @@ const defaultAgentConfig: AgentConfig = {
     latency: 100,
   },
   trainingFiles: [],
+  model: "gpt-4o-mini",
+  maxTokens: 1024,
+  temperature: 0.7,
+  detectEmotion: false,
 };
 
 const defaultAdminConfig: AdminConfig = {
@@ -153,7 +162,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const agentConfigData = await db.getAgentConfig();
       if (agentConfigData) {
-        setAgentConfig(agentConfigData as AgentConfig);
+        // Ensure new fields are properly initialized
+        setAgentConfig({
+          ...defaultAgentConfig,
+          ...agentConfigData,
+          model: agentConfigData.model || defaultAgentConfig.model,
+          maxTokens: agentConfigData.maxTokens || defaultAgentConfig.maxTokens,
+          temperature: agentConfigData.temperature || defaultAgentConfig.temperature,
+          detectEmotion: agentConfigData.detectEmotion || defaultAgentConfig.detectEmotion,
+        } as AgentConfig);
       }
       
       const adminConfigData = await db.getAdminConfig();
@@ -179,7 +196,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const storedConversations = localStorage.getItem("conversations");
 
     if (storedWidgetConfig) setWidgetConfig(JSON.parse(storedWidgetConfig));
-    if (storedAgentConfig) setAgentConfig(JSON.parse(storedAgentConfig));
+    if (storedAgentConfig) {
+      const parsedConfig = JSON.parse(storedAgentConfig);
+      // Ensure new fields are properly initialized
+      setAgentConfig({
+        ...defaultAgentConfig,
+        ...parsedConfig,
+        model: parsedConfig.model || defaultAgentConfig.model,
+        maxTokens: parsedConfig.maxTokens || defaultAgentConfig.maxTokens,
+        temperature: parsedConfig.temperature || defaultAgentConfig.temperature,
+        detectEmotion: parsedConfig.detectEmotion || defaultAgentConfig.detectEmotion,
+      });
+    }
     if (storedAdminConfig) setAdminConfig(JSON.parse(storedAdminConfig));
     if (storedConversations) {
       const parsedConversations = JSON.parse(storedConversations);

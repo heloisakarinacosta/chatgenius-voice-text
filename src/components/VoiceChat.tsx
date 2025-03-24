@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, MessageSquare } from "lucide-react";
+import { Mic, MicOff, MessageSquare, Volume2, PauseCircle, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/contexts/ChatContext";
 import { transcribeAudio } from "@/utils/openai";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 interface VoiceChatProps {
   apiKey: string;
@@ -13,12 +14,35 @@ interface VoiceChatProps {
 const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const { isVoiceChatActive, setIsVoiceChatActive, addMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(true);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isTextInputMode, setIsTextInputMode] = useState(false);
+  const [textInput, setTextInput] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const [lastUserInteraction, setLastUserInteraction] = useState<Date>(new Date());
+
+  // Auto-lisining mode
+  useEffect(() => {
+    if (isListening && !isRecording && !isTranscribing && !isTextInputMode) {
+      const timeSinceLastInteraction = new Date().getTime() - lastUserInteraction.getTime();
+      
+      // Começar gravação após um tempo de silêncio (3 segundos)
+      if (timeSinceLastInteraction > 3000) {
+        startRecording();
+      }
+    }
+    
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [isListening, isRecording, isTranscribing, isTextInputMode, lastUserInteraction]);
 
   // Inicializar gravador de mídia
   const startRecording = async () => {
@@ -48,6 +72,12 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         console.log(`Áudio gravado: ${audioBlob.size} bytes`);
         
+        if (audioBlob.size < 1000) {
+          console.log("Gravação muito curta, ignorando");
+          setLastUserInteraction(new Date());
+          return;
+        }
+        
         try {
           setIsTranscribing(true);
           console.log("Transcrevendo áudio...");
@@ -57,6 +87,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           if (transcript) {
             console.log(`Transcrição: "${transcript}"`);
             addMessage(transcript, "user");
+            setLastUserInteraction(new Date());
           } else {
             console.error("Transcrição vazia recebida");
             toast.error("Não foi possível transcrever sua mensagem. Por favor, tente novamente.");
@@ -93,7 +124,16 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       
       // Iniciar timer de gravação
       timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
+        setRecordingTime((prev) => {
+          // Auto-encerrar se a gravação for muito longa (15 segundos)
+          if (prev >= 14) {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              stopRecording();
+            }
+            return 0;
+          }
+          return prev + 1;
+        });
       }, 1000);
     } catch (error) {
       console.error("Erro ao acessar microfone:", error);
@@ -153,6 +193,21 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
+  // Alternar entre áudio e texto
+  const toggleInputMode = () => {
+    setIsTextInputMode(!isTextInputMode);
+    
+    if (!isTextInputMode) {
+      if (isRecording) {
+        stopRecording();
+      }
+      // Foca no input de texto
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 100);
+    }
+  };
+
   // Mudar para modo texto
   const switchToTextMode = () => {
     if (isRecording) {
@@ -161,11 +216,37 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     setIsVoiceChatActive(false);
   };
 
+  // Enviar mensagem de texto
+  const handleSendText = () => {
+    if (!textInput.trim()) return;
+    
+    addMessage(textInput, "user");
+    setTextInput("");
+    setIsTextInputMode(false);
+    setLastUserInteraction(new Date());
+  };
+
   // Formatar tempo de gravação
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Lidar com tecla Enter para enviar mensagem de texto
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendText();
+    }
+  };
+
+  // Alternar escuta automática
+  const toggleListening = () => {
+    setIsListening(!isListening);
+    if (isRecording) {
+      stopRecording();
+    }
   };
 
   // Limpar ao desmontar
@@ -194,7 +275,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           onClick={switchToTextMode}
         >
           <MessageSquare className="h-3 w-3" />
-          Mudar para texto
+          Voltar para texto
         </Button>
         
         <div className="text-xs text-muted-foreground">
@@ -202,33 +283,84 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
             <span className="text-red-500 animate-pulse font-medium">Gravando {formatTime(recordingTime)}</span>
           ) : isTranscribing ? (
             <span className="text-amber-500 animate-pulse font-medium">Transcrevendo...</span>
+          ) : isListening ? (
+            <span className="text-green-500">Escutando...</span>
           ) : (
             "Modo de voz ativado"
           )}
         </div>
       </div>
       
-      <Button
-        variant={isRecording ? "destructive" : "default"}
-        size="icon"
-        className={`rounded-full w-16 h-16 ${isRecording ? 'animate-pulse' : ''}`}
-        onClick={isRecording ? stopRecording : startRecording}
-        disabled={isTranscribing}
-      >
-        {isRecording ? (
-          <MicOff className="h-6 w-6" />
-        ) : (
-          <Mic className="h-6 w-6" />
-        )}
-      </Button>
-      
-      <p className="mt-3 text-xs text-center text-muted-foreground max-w-xs">
-        {isRecording 
-          ? "Clique para parar a gravação" 
-          : isTranscribing
-          ? "Transcrevendo sua mensagem..."
-          : "Clique no botão para começar a falar. Você pode alternar entre texto e voz a qualquer momento."}
-      </p>
+      {isTextInputMode ? (
+        <div className="w-full flex gap-2">
+          <Input
+            ref={textInputRef}
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={handleKeyPress}
+            placeholder="Digite sua mensagem..."
+            className="flex-1"
+          />
+          <Button 
+            variant="default" 
+            disabled={!textInput.trim()}
+            onClick={handleSendText}
+          >
+            Enviar
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center">
+          <div className="flex gap-4 mb-4">
+            <Button
+              variant={isRecording ? "destructive" : "default"}
+              size="icon"
+              className={`rounded-full w-16 h-16 ${isRecording ? 'animate-pulse' : ''}`}
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isTranscribing}
+            >
+              {isRecording ? (
+                <MicOff className="h-6 w-6" />
+              ) : (
+                <Mic className="h-6 w-6" />
+              )}
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full w-12 h-12"
+              onClick={toggleListening}
+            >
+              {isListening ? (
+                <PauseCircle className="h-5 w-5 text-amber-500" />
+              ) : (
+                <Volume2 className="h-5 w-5 text-green-500" />
+              )}
+            </Button>
+          </div>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={toggleInputMode}
+          >
+            <Keyboard className="h-4 w-4 mr-1" />
+            <span>Digitar texto</span>
+          </Button>
+          
+          <p className="mt-3 text-xs text-center text-muted-foreground max-w-xs">
+            {isRecording 
+              ? "Clique para parar a gravação" 
+              : isTranscribing
+              ? "Transcrevendo sua mensagem..."
+              : isListening
+              ? "Escutando... Comece a falar e a gravação iniciará automaticamente."
+              : "Clique no botão para começar a falar."}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

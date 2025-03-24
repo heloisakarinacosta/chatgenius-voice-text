@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw, Volume2, FileText, HelpCircle, Mic } from "lucide-react";
+import { RefreshCw, Volume2, FileText, HelpCircle, Mic, Code, Brain, Bot, Braces } from "lucide-react";
 import { toast } from "sonner";
 import { AgentConfig } from "@/contexts/ChatContext";
 import { 
@@ -16,6 +16,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 
 interface AgentConfigTabProps {
   agentConfig: AgentConfig;
@@ -52,6 +54,12 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
     { id: "ja-JP", name: "Japonês" },
     { id: "ko-KR", name: "Coreano" },
     { id: "zh-CN", name: "Chinês (Simplificado)" },
+  ];
+
+  // Opções de modelos da OpenAI
+  const modelOptions = [
+    { id: "gpt-4o-mini", name: "GPT-4o Mini - Rápido e econômico" },
+    { id: "gpt-4o", name: "GPT-4o - Mais poderoso" },
   ];
 
   // Salvar configuração do agente
@@ -131,8 +139,110 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
         
         <div className="space-y-4">
           <div className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-medium">Configurações do Modelo</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="model">Modelo OpenAI</Label>
+              <Select
+                value={updatedAgentConfig.model}
+                onValueChange={(value) => setUpdatedAgentConfig({
+                  ...updatedAgentConfig,
+                  model: value,
+                })}
+              >
+                <SelectTrigger id="model">
+                  <SelectValue placeholder="Selecione o modelo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {modelOptions.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Selecione o modelo de IA que será usado para gerar respostas.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="maxTokens">Máximo de Tokens</Label>
+              <Input
+                id="maxTokens"
+                type="number"
+                min="100"
+                max="4096"
+                value={updatedAgentConfig.maxTokens}
+                onChange={(e) => setUpdatedAgentConfig({
+                  ...updatedAgentConfig,
+                  maxTokens: parseInt(e.target.value),
+                })}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Limite máximo de tokens para cada resposta (100-4096).
+              </p>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Temperatura</Label>
+            <div className="pt-2">
+              <Slider
+                value={[updatedAgentConfig.temperature]}
+                min={0}
+                max={1}
+                step={0.1}
+                onValueChange={(values) => setUpdatedAgentConfig({
+                  ...updatedAgentConfig,
+                  temperature: values[0],
+                })}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Preciso ({updatedAgentConfig.temperature === 0 ? 'Atual' : ''})</span>
+              <span>{updatedAgentConfig.temperature.toFixed(1)}</span>
+              <span>Criativo ({updatedAgentConfig.temperature === 1 ? 'Atual' : ''})</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="detectEmotion" className="font-medium">Detectar Emoção</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-5 w-5">
+                      <HelpCircle className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm">
+                    <p>Quando ativado, o assistente tentará detectar a emoção nas mensagens do usuário e adaptar suas respostas de acordo.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Switch
+              id="detectEmotion"
+              checked={updatedAgentConfig.detectEmotion}
+              onCheckedChange={(checked) => setUpdatedAgentConfig({
+                ...updatedAgentConfig,
+                detectEmotion: checked,
+              })}
+            />
+          </div>
+        </div>
+        
+        <Separator />
+        
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
             <Mic className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-medium">Configuração de Voz</h3>
+            <h3 className="text-lg font-medium">Conversa por Voz</h3>
           </div>
           
           <div className="flex items-center justify-between">
@@ -254,7 +364,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
 
             <div className="mt-2 p-3 bg-primary/5 rounded border border-primary/10">
               <p className="text-sm">
-                <strong>Como funciona:</strong> Quando ativado, os usuários verão um botão de microfone no chat e poderão alternar entre texto e voz a qualquer momento. O assistente responderá com texto e áudio.
+                <strong>Como funciona:</strong> Quando ativado, os usuários terão uma conversa de voz bidirecional com o assistente. O agente continuará a conversa por áudio e poderá alternar entre texto e voz conforme necessário.
               </p>
             </div>
           </div>
