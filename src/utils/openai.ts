@@ -30,19 +30,25 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
   }
 
   try {
+    const requestBody: any = {
+      model: options.model || "gpt-4o-mini",
+      messages: options.messages,
+      temperature: options.temperature || 0.7,
+      stream: options.stream || false,
+    };
+
+    // Only include functions if they exist and are not empty
+    if (options.functions && options.functions.length > 0) {
+      requestBody.functions = options.functions;
+    }
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: options.model || "gpt-4o-mini",
-        messages: options.messages,
-        temperature: options.temperature || 0.7,
-        functions: options.functions,
-        stream: options.stream || false,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -75,19 +81,25 @@ export async function streamOpenAI(
   }
 
   try {
+    const requestBody: any = {
+      model: options.model || "gpt-4o-mini",
+      messages: options.messages,
+      temperature: options.temperature || 0.7,
+      stream: true,
+    };
+
+    // Only include functions if they exist and are not empty
+    if (options.functions && options.functions.length > 0) {
+      requestBody.functions = options.functions;
+    }
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: options.model || "gpt-4o-mini",
-        messages: options.messages,
-        temperature: options.temperature || 0.7,
-        functions: options.functions,
-        stream: true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

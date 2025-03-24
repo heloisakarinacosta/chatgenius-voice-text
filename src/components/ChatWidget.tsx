@@ -91,16 +91,21 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     try {
       let assistantMessage = "";
       
+      const streamOptions: any = {
+        messages: conversationHistory,
+        stream: true,
+      };
+      
+      if (agentConfig.functions && agentConfig.functions.length > 0) {
+        streamOptions.functions = agentConfig.functions.map(fn => ({
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters,
+        }));
+      }
+      
       await streamOpenAI(
-        {
-          messages: conversationHistory,
-          functions: agentConfig.functions.map(fn => ({
-            name: fn.name,
-            description: fn.description,
-            parameters: fn.parameters,
-          })),
-          stream: true,
-        },
+        streamOptions,
         apiKey,
         {
           onMessage: (chunk) => {
