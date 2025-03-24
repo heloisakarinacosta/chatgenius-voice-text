@@ -15,14 +15,13 @@ router.get('/', async (req, res) => {
     const [configRows] = await pool.query('SELECT * FROM agent_config WHERE id = 1');
     
     let agentConfig;
-    
     if (configRows.length === 0) {
       // Insert default config if not exists
       const defaultConfig = {
-        system_prompt: "You are a helpful assistant. Provide clear and concise information to the user's queries.",
+        system_prompt: "Você é um assistente útil e prestativo. Forneça informações claras e concisas para as perguntas do usuário. Responda sempre em português do Brasil.",
         voice_enabled: true,
-        voice_id: "alloy",
-        voice_language: "en-US",
+        voice_id: "nova",
+        voice_language: "pt-BR",
         voice_latency: 100
       };
       
@@ -38,7 +37,9 @@ router.get('/', async (req, res) => {
           voiceId: defaultConfig.voice_id,
           language: defaultConfig.voice_language,
           latency: defaultConfig.voice_latency
-        }
+        },
+        functions: [],
+        trainingFiles: []
       };
     } else {
       const config = configRows[0];
@@ -49,13 +50,15 @@ router.get('/', async (req, res) => {
           voiceId: config.voice_id,
           language: config.voice_language,
           latency: config.voice_latency
-        }
+        },
+        functions: [],
+        trainingFiles: []
       };
     }
     
     // Get agent functions
     const [functionRows] = await pool.query('SELECT * FROM agent_functions');
-    const functions = functionRows.map(func => ({
+    agentConfig.functions = functionRows.map(func => ({
       name: func.name,
       description: func.description,
       parameters: JSON.parse(func.parameters),
@@ -64,20 +67,16 @@ router.get('/', async (req, res) => {
     
     // Get training files
     const [fileRows] = await pool.query('SELECT * FROM training_files');
-    const trainingFiles = fileRows.map(file => ({
+    agentConfig.trainingFiles = fileRows.map(file => ({
       id: file.id,
       name: file.name,
       content: file.content,
       size: file.size,
       type: file.type,
-      timestamp: new Date(file.timestamp)
+      timestamp: file.timestamp
     }));
     
-    res.json({
-      ...agentConfig,
-      functions,
-      trainingFiles
-    });
+    res.json(agentConfig);
   } catch (error) {
     console.error('Error fetching agent config:', error);
     res.status(500).json({ error: 'Failed to fetch agent configuration' });
@@ -104,7 +103,7 @@ router.put('/', async (req, res) => {
     await pool.query('DELETE FROM agent_functions');
     
     if (functions && functions.length > 0) {
-      const functionsValues = functions.map(func => [
+      const values = functions.map(func => [
         func.name,
         func.description,
         JSON.stringify(func.parameters),
@@ -112,7 +111,7 @@ router.put('/', async (req, res) => {
       ]);
       
       const placeholders = functions.map(() => '(?, ?, ?, ?)').join(', ');
-      const flatValues = functionsValues.flat();
+      const flatValues = values.flat();
       
       await pool.query(
         `INSERT INTO agent_functions (name, description, parameters, webhook) VALUES ${placeholders}`,

@@ -161,9 +161,16 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const agentConfigData = await db.getAgentConfig();
       if (agentConfigData) {
+        const trainingFiles = agentConfigData.trainingFiles || [];
+        const parsedTrainingFiles = trainingFiles.map((file: any) => ({
+          ...file,
+          timestamp: new Date(file.timestamp)
+        }));
+        
         setAgentConfig({
           ...defaultAgentConfig,
           ...agentConfigData,
+          trainingFiles: parsedTrainingFiles,
           model: agentConfigData.model || defaultAgentConfig.model,
           maxTokens: agentConfigData.maxTokens || defaultAgentConfig.maxTokens,
           temperature: agentConfigData.temperature || defaultAgentConfig.temperature,
@@ -178,7 +185,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const conversationsData = await db.getConversations();
       if (conversationsData && conversationsData.length > 0) {
-        setConversations(conversationsData as Conversation[]);
+        const parsedConversations = conversationsData.map((conv: any) => ({
+          ...conv,
+          createdAt: new Date(conv.createdAt),
+          messages: conv.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+        }));
+        setConversations(parsedConversations);
       }
     } catch (error) {
       console.error("Error loading data from database:", error);
@@ -349,7 +364,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }));
           
           if (isDbConnected) {
-            await db.addTrainingFile(newFile);
+            try {
+              await db.addTrainingFile(newFile);
+            } catch (error) {
+              console.error('Error saving training file to database:', error);
+            }
           }
           
           resolve();
@@ -373,7 +392,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
     
     if (isDbConnected) {
-      db.removeTrainingFile(id);
+      db.removeTrainingFile(id)
+        .catch(error => console.error('Error removing training file from database:', error));
     }
   }, [isDbConnected]);
 
