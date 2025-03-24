@@ -59,8 +59,17 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         return;
       }
       
-      // Read file contents
-      const content = await readFileContent(file);
+      // Choose appropriate reading method based on file type
+      let content: string;
+      
+      if (isDocx) {
+        // For DOCX, we'll store a placeholder and let the backend handle it
+        // We can't parse DOCX in the browser easily
+        content = `[DOCX Document: ${file.name}]\n\nThis document was uploaded in DOCX format. The content is being processed.`;
+      } else {
+        // For text files, read as text
+        content = await readFileContent(file);
+      }
       
       // Create training file object
       const trainingFile: TrainingFile = {

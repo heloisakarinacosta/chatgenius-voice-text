@@ -20,10 +20,23 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // Handle DOCX files specially
+    let fileContent = content || '';
+    let fileType = type || 'text/plain';
+    
+    // Special handling for docx files
+    if (name.endsWith('.docx') || fileType.includes('openxmlformats-officedocument.wordprocessingml.document')) {
+      console.log('Processing DOCX file:', name);
+      // Store the placeholder content as is
+      if (!fileContent.includes('[DOCX Document:')) {
+        fileContent = `[DOCX Document: ${name}]`;
+      }
+    }
+    
     // Use parameterized query to prevent SQL injection
     await pool.query(
       'INSERT INTO training_files (id, name, content, size, type, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, content || '', size || 0, type || 'text/plain', new Date()]
+      [id, name, fileContent, size || 0, fileType, new Date()]
     );
     
     console.log(`Training file ${name} added successfully`);
