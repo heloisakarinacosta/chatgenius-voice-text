@@ -15,7 +15,14 @@ const initDatabase = async () => {
       database: process.env.DB_NAME || 'chat_assistant',
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0
+      queueLimit: 0,
+      // Adicionar estas configurações para lidar com diferentes métodos de autenticação
+      authPlugins: {
+        mysql_native_password: () => ({ type: 'mysql_native_password' }),
+        mysql_clear_password: () => ({ type: 'mysql_clear_password' }),
+        sha256_password: () => ({ type: 'sha256_password' }),
+        caching_sha2_password: () => ({ type: 'caching_sha2_password' })
+      }
     });
     
     console.log('Database pool initialized');
