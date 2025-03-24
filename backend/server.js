@@ -39,4 +39,8 @@ app.use('/api/training', trainingRoutes);
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('Available routes:');
+  console.log('- GET /api/admin/api-key');
+  console.log('- GET /api/health');
+  // Add other important routes here for debugging
 });
