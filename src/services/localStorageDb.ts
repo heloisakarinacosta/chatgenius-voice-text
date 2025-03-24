@@ -76,6 +76,7 @@ const defaultAgentConfig: AgentConfig = {
 const defaultAdminConfig: AdminConfig = {
   username: "admin",
   passwordHash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
+  apiKey: "", // Added empty apiKey property
 };
 
 // Get widget configuration from localStorage
@@ -133,11 +134,7 @@ export const getAdminConfig = () => {
   const adminConfig = localStorage.getItem('adminConfig');
   
   if (!adminConfig) {
-    return {
-      username: 'admin',
-      passwordHash: '',
-      apiKey: ''
-    };
+    return defaultAdminConfig;
   }
   
   try {
@@ -149,16 +146,12 @@ export const getAdminConfig = () => {
     };
   } catch (e) {
     console.error('Error parsing admin config from localStorage:', e);
-    return {
-      username: 'admin',
-      passwordHash: '',
-      apiKey: ''
-    };
+    return defaultAdminConfig;
   }
 };
 
 // Save admin configuration to localStorage
-export const updateAdminConfig = (config) => {
+export const updateAdminConfig = (config: AdminConfig) => {
   try {
     localStorage.setItem('adminConfig', JSON.stringify({
       username: config.username || 'admin',
