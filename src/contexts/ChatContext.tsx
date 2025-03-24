@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { getWidgetConfig, getAgentConfig, updateWidgetConfig, updateAgentConfig, getAdminConfig, updateAdminConfig, isConnected } from "@/services/databaseService";
 import { v4 as uuidv4 } from "uuid";
@@ -37,7 +38,7 @@ export interface AgentFunction {
 export interface AdminConfig {
   username: string;
   passwordHash: string;
-  apiKey: string;
+  apiKey: string;  // Adding the apiKey property here
 }
 
 export interface AgentConfig {
