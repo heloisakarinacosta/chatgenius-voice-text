@@ -116,6 +116,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setIsProcessing(true);
     setIsTyping(true);
     
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     const conversationHistory: OpenAIMessage[] = [
       { role: "system", content: agentConfig.systemPrompt },
       ...messages.map(msg => ({ 
@@ -126,6 +128,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     ];
     
     try {
+      console.log("Enviando mensagem para OpenAI", conversationHistory);
       let assistantMessage = "";
       
       const streamOptions: any = {
@@ -141,28 +144,32 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         }));
       }
       
+      addMessage("", "assistant");
+      
       await streamOpenAI(
         streamOptions,
         apiKey,
         {
           onMessage: (chunk) => {
-            if (!assistantMessage) {
-              addMessage("", "assistant");
-            }
             assistantMessage += chunk;
             
             const updatedMessages = [...messages];
             if (updatedMessages.length > 0) {
-              const lastMessage = updatedMessages[updatedMessages.length - 1];
-              if (lastMessage.role === "assistant") {
+              const lastAssistantMessageIndex = updatedMessages.findIndex(
+                msg => msg.role === "assistant"
+              );
+              
+              if (lastAssistantMessageIndex !== -1) {
+                const lastMessage = updatedMessages[lastAssistantMessageIndex];
                 lastMessage.content = assistantMessage;
               }
             }
           },
           onComplete: async (fullMessage) => {
             setIsTyping(false);
+            
             if (!assistantMessage) {
-              addMessage(fullMessage, "assistant");
+              console.log("A mensagem completa foi recebida, mas sem chunks", fullMessage);
             }
             
             if (agentConfig.voice.enabled && isVoiceChatActive) {

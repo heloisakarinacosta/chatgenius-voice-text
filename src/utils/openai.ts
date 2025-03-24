@@ -42,6 +42,11 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
       requestBody.functions = options.functions;
     }
 
+    console.log("Enviando requisição para OpenAI API:", {
+      ...requestBody,
+      messages: `${requestBody.messages.length} mensagens`
+    });
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -53,6 +58,8 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
 
     if (!response.ok) {
       const error = await response.json();
+      console.error("Erro na resposta da OpenAI API:", error);
+      
       if (response.status === 429) {
         throw new Error("API_QUOTA_EXCEEDED");
       } else if (response.status === 401) {
@@ -65,7 +72,7 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
     const data = await response.json();
     return data.choices[0].message.content;
   } catch (error) {
-    console.error("Error calling OpenAI:", error);
+    console.error("Erro ao chamar OpenAI:", error);
     throw error;
   }
 }
@@ -93,6 +100,11 @@ export async function streamOpenAI(
       requestBody.functions = options.functions;
     }
 
+    console.log("Enviando streaming para OpenAI API:", {
+      ...requestBody,
+      messages: `${requestBody.messages.length} mensagens`
+    });
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -104,11 +116,14 @@ export async function streamOpenAI(
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`Erro na resposta de streaming (${response.status}): ${errorText}`);
+      
       let errorJson;
       try {
         errorJson = JSON.parse(errorText);
       } catch (e) {
         // Se não for JSON, apenas continua
+        console.log("Resposta de erro não é JSON válido");
       }
       
       if (response.status === 429) {
@@ -127,33 +142,50 @@ export async function streamOpenAI(
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let fullMessage = "";
+    let buffer = "";
+
+    console.log("Iniciando leitura do stream");
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        console.log("Stream concluído");
+        break;
+      }
 
       const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
+      buffer += chunk;
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
       
       for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
+        if (line.startsWith("data: ")) {
+          const data = line.substring(6);
+          
+          if (data === "[DONE]") {
+            console.log("Recebido [DONE] no stream");
+            continue;
+          }
+          
           try {
-            const json = JSON.parse(line.substring(6));
+            const json = JSON.parse(data);
             if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
               const content = json.choices[0].delta.content;
               fullMessage += content;
               callbacks.onMessage?.(content);
             }
           } catch (e) {
-            console.error("Error parsing JSON:", e);
+            console.error("Erro ao parsear JSON do stream:", e, "Line:", line);
           }
         }
       }
     }
 
+    console.log("Stream completo, mensagem final:", fullMessage);
     callbacks.onComplete?.(fullMessage);
   } catch (error) {
-    console.error("Error streaming from OpenAI:", error);
+    console.error("Erro ao fazer streaming da OpenAI:", error);
     callbacks.onError?.(error);
   }
 }

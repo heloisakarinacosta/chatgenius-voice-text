@@ -1,7 +1,10 @@
 
-import React from "react";
-import { Message } from "../contexts/ChatContext";
+import React, { useEffect, useState } from "react";
+import { Message } from "@/contexts/ChatContext";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { User, Bot, Loader2 } from "lucide-react";
+import { ptBR } from "date-fns/locale";
 
 interface ChatBubbleProps {
   message: Message;
@@ -9,37 +12,75 @@ interface ChatBubbleProps {
 }
 
 const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isTyping = false }) => {
-  const isUser = message.role === "user";
-  const time = message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [displayContent, setDisplayContent] = useState<string>(message.content);
+
+  useEffect(() => {
+    // Atualiza o conteúdo quando a mensagem muda
+    setDisplayContent(message.content);
+
+    // Formata a hora usando date-fns
+    try {
+      const formattedTime = format(new Date(message.timestamp), "HH:mm", { 
+        locale: ptBR 
+      });
+      setCurrentTime(formattedTime);
+    } catch (e) {
+      console.error("Erro ao formatar timestamp:", e);
+      setCurrentTime("");
+    }
+  }, [message]);
+
+  // Quando o conteúdo da mensagem é atualizado, atualiza o displayContent
+  useEffect(() => {
+    setDisplayContent(message.content);
+  }, [message.content]);
 
   return (
-    <div
-      className={cn(
-        "flex w-full mb-4 message-appear",
-        isUser ? "justify-end" : "justify-start"
+    <div className={cn(
+      "flex items-start gap-2.5 mb-4",
+      message.role === "user" ? "justify-end" : "justify-start"
+    )}>
+      {message.role !== "user" && (
+        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10">
+          <Bot className="h-4 w-4 text-primary" />
+        </div>
       )}
-    >
-      <div
-        className={cn(
-          "max-w-[80%] px-4 py-2 rounded-xl",
-          isUser
-            ? "bg-primary text-primary-foreground rounded-tr-none"
-            : "bg-muted text-muted-foreground rounded-tl-none"
-        )}
-      >
+      
+      <div className={cn(
+        "max-w-[80%] px-4 py-2 rounded-lg",
+        message.role === "user" 
+          ? "bg-primary text-primary-foreground" 
+          : "bg-muted"
+      )}>
         {isTyping ? (
-          <div className="flex space-x-1 items-center py-1">
-            <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
-            <div className="w-2 h-2 bg-current rounded-full animate-pulse delay-150"></div>
-            <div className="w-2 h-2 bg-current rounded-full animate-pulse delay-300"></div>
+          <div className="flex items-center gap-1.5">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Digitando</span>
+          </div>
+        ) : displayContent ? (
+          <div className="text-sm whitespace-pre-wrap">
+            {displayContent}
           </div>
         ) : (
-          <>
-            <p className="text-sm md:text-base whitespace-pre-wrap break-words">{message.content}</p>
-            <span className="text-xs opacity-70 block text-right mt-1">{time}</span>
-          </>
+          <div className="flex items-center gap-1.5">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Carregando resposta...</span>
+          </div>
+        )}
+        
+        {currentTime && (
+          <div className="text-[10px] mt-1 opacity-60 text-right">
+            {currentTime}
+          </div>
         )}
       </div>
+      
+      {message.role === "user" && (
+        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10">
+          <User className="h-4 w-4 text-primary" />
+        </div>
+      )}
     </div>
   );
 };
