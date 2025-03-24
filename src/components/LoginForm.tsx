@@ -10,7 +10,7 @@ import { useChat } from "@/contexts/ChatContext";
 import { toast } from "sonner";
 
 interface LoginFormProps {
-  onLogin: () => void;
+  onLogin: (username: string, password: string) => void;
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
@@ -31,14 +31,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
     
     // Simulate network delay
     setTimeout(() => {
-      // Check credentials - using SHA256 instead of createHash
-      if (username === adminConfig.username && SHA256(password).toString() === adminConfig.passwordHash) {
-        toast.success("Login successful");
-        onLogin();
-      } else {
-        toast.error("Invalid username or password");
-      }
-      
+      onLogin(username, password);
       setIsLoading(false);
     }, 800);
   };

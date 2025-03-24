@@ -17,7 +17,7 @@ const Admin = () => {
   const [apiKey, setApiKey] = useState("");
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [dbConnectionStatus, setDbConnectionStatus] = useState<boolean | null>(null);
-  const { adminConfig, loadData } = useChat();
+  const { adminConfig } = useChat();
   const navigate = useNavigate();
 
   // Inicialize o banco de dados e verifique a conexão
@@ -28,9 +28,6 @@ const Admin = () => {
         const isDbConnected = await initDatabase();
         console.log('Database connection status:', isDbConnected);
         setDbConnectionStatus(isDbConnected);
-        
-        // Carregue os dados após inicializar o banco de dados
-        await loadData();
         
         // Tente buscar a API key do config
         const config = await getAdminConfig();
@@ -50,7 +47,7 @@ const Admin = () => {
     };
     
     checkConnection();
-  }, [loadData]);
+  }, []);
 
   const handleLogin = (username: string, password: string) => {
     if (!adminConfig) {
