@@ -5,10 +5,13 @@ import AdminPanel from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [backendError, setBackendError] = useState(false);
   const { adminConfig, updateAdminConfig, isDbConnected } = useChat();
 
   // Get API key from backend/local storage
@@ -23,9 +26,20 @@ const Admin = () => {
         return response.json();
       } catch (error) {
         console.error('Error fetching admin config:', error);
+        
+        // Check if error is due to backend server not running
+        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+          setBackendError(true);
+          toast.error("Backend server não está rodando", {
+            description: "Verifique se o servidor backend está em execução em localhost:3001",
+            duration: 10000,
+          });
+        }
+        
         return adminConfig; // Use cached data from context if available
       }
     },
+    retry: 1, // Only retry once
     enabled: isDbConnected // Only run query if DB is connected
   });
 
@@ -72,6 +86,17 @@ const Admin = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {backendError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erro de Conexão</AlertTitle>
+          <AlertDescription>
+            O servidor backend não está rodando. Você pode continuar usando o aplicativo 
+            em modo offline, mas os dados serão armazenados apenas localmente.
+          </AlertDescription>
+        </Alert>
+      )}
+      
       {isAuthenticated ? (
         <AdminPanel
           apiKey={apiKey}
