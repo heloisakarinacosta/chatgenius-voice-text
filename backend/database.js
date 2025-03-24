@@ -1,3 +1,4 @@
+
 const mysql = require('mysql2/promise');
 
 // Database connection configuration
@@ -120,7 +121,7 @@ const createTables = async () => {
       )
     `);
     
-    // Admin config table
+    // Admin config table - Added api_key column
     await pool.query(`
       CREATE TABLE IF NOT EXISTS admin_config (
         id INT PRIMARY KEY,
@@ -130,6 +131,17 @@ const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
+    
+    // Check if api_key column exists, if not add it
+    try {
+      await pool.query(`
+        ALTER TABLE admin_config
+        ADD COLUMN IF NOT EXISTS api_key VARCHAR(100) DEFAULT ''
+      `);
+      console.log('Checked and added api_key column if needed');
+    } catch (altError) {
+      console.error('Error checking/adding api_key column:', altError);
+    }
     
     console.log('Database tables created/verified');
   } catch (error) {

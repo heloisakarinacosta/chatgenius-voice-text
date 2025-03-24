@@ -32,6 +32,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
       setIsSaving(true);
       // Atualizar a chave através da função fornecida pelo componente pai
       setApiKey(keyInput.trim());
+      toast.success("Chave API salva com sucesso");
       setIsSaved(true);
     } catch (error) {
       console.error("Erro ao salvar a chave API:", error);

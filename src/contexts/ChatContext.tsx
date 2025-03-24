@@ -172,7 +172,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Load admin configuration
         const adminConfigData = await getAdminConfig();
         if (adminConfigData) {
-          setAdminConfig(adminConfigData);
+          setAdminConfig({
+            username: adminConfigData.username || "admin",
+            passwordHash: adminConfigData.passwordHash || "",
+            apiKey: adminConfigData.apiKey || "",
+          });
         }
         
         // Set database connection status

@@ -99,7 +99,12 @@ export const getAdminConfig = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/admin`);
       if (!response.ok) throw new Error('Failed to fetch admin config');
-      return await response.json();
+      const data = await response.json();
+      return {
+        username: data.username,
+        passwordHash: data.passwordHash,
+        apiKey: data.apiKey || ""
+      };
     } catch (error) {
       console.error('Error fetching admin config from API:', error);
       return localDb.getAdminConfig();
@@ -111,12 +116,24 @@ export const getAdminConfig = async () => {
 export const updateAdminConfig = async (config: any) => {
   if (isDbConnected) {
     try {
+      console.log('Updating admin config:', config);
       const response = await fetch(`${API_BASE_URL}/admin`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify({
+          username: config.username || 'admin',
+          passwordHash: config.passwordHash || '',
+          apiKey: config.apiKey || ''
+        })
       });
-      return response.ok;
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Server error when updating admin config:', errorData);
+        throw new Error(errorData.error || 'Failed to update admin config');
+      }
+      
+      return true;
     } catch (error) {
       console.error('Error updating admin config via API:', error);
       return localDb.updateAdminConfig(config);
