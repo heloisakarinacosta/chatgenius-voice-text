@@ -9,7 +9,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { initDatabase, isConnected, getAdminConfig } from "@/services/databaseService";
+import { initDatabase, isConnected, getAdminConfig, getDbConnection } from "@/services/databaseService";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -17,10 +17,10 @@ const Admin = () => {
   const [apiKey, setApiKey] = useState("");
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [dbConnectionStatus, setDbConnectionStatus] = useState<boolean | null>(null);
-  const { adminConfig } = useChat();
+  const { adminConfig, loadData } = useChat();
   const navigate = useNavigate();
 
-  // Inicialize o banco de dados e verifique a conexão
+  // Initialize database and check connection
   useEffect(() => {
     const checkConnection = async () => {
       try {
@@ -29,13 +29,18 @@ const Admin = () => {
         console.log('Database connection status:', isDbConnected);
         setDbConnectionStatus(isDbConnected);
         
-        // Tente buscar a API key do config
+        // Try to fetch the API key from config
         const config = await getAdminConfig();
         if (config && config.apiKey) {
           console.log('Found API key in admin config');
           setApiKey(config.apiKey);
         } else {
           console.log('No API key found in admin config');
+        }
+        
+        // Reload all data in context to stay in sync with database
+        if (loadData) {
+          await loadData();
         }
         
         setIsLoading(false);
@@ -47,7 +52,18 @@ const Admin = () => {
     };
     
     checkConnection();
-  }, []);
+  }, [loadData]);
+
+  // Refresh database connection status
+  const refreshConnectionStatus = async () => {
+    try {
+      const status = await getDbConnection();
+      setDbConnectionStatus(status !== null);
+      window.location.reload();
+    } catch (error) {
+      console.error('Error refreshing connection status:', error);
+    }
+  };
 
   const handleLogin = (username: string, password: string) => {
     if (!adminConfig) {
@@ -57,7 +73,7 @@ const Admin = () => {
 
     const passwordHash = SHA256(password).toString();
     
-    if (passwordHash === adminConfig.passwordHash) {
+    if (username === adminConfig.username && passwordHash === adminConfig.passwordHash) {
       setIsAuthenticated(true);
       setLoginAttempts(0);
       toast.success("Login bem-sucedido!");
@@ -111,7 +127,7 @@ const Admin = () => {
                 <Button 
                   variant="default" 
                   size="sm" 
-                  onClick={() => window.location.reload()}
+                  onClick={refreshConnectionStatus}
                 >
                   Tentar novamente
                 </Button>
@@ -121,7 +137,7 @@ const Admin = () => {
         </Alert>
       )}
       
-      {/* Detectar API Backend rodando mas sem conexão com banco de dados */}
+      {/* Detect API Backend running but without database connection */}
       {dbConnectionStatus !== null && !isConnected() && dbConnectionStatus !== false && (
         <Alert className="max-w-4xl mx-auto mt-4 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
           <AlertTriangle className="h-4 w-4 text-yellow-600" />

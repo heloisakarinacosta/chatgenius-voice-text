@@ -18,7 +18,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
   const [isSaving, setIsSaving] = useState(false);
   const { updateAdminConfig, adminConfig, isDbConnected } = useChat();
 
-  // Sincronizar o estado local quando a prop apiKey mudar
+  // Synchronize local state when the apiKey prop changes
   useEffect(() => {
     setKeyInput(apiKey);
     setIsSaved(Boolean(apiKey));
@@ -34,7 +34,11 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
       setIsSaving(true);
       console.log('Attempting to save API key...');
       
-      // Atualizar no contexto e no banco de dados/localStorage
+      // Update in context and database/localStorage
+      if (!adminConfig) {
+        throw new Error('Admin configuration not loaded');
+      }
+      
       const updatedConfig = {
         ...adminConfig,
         apiKey: keyInput.trim()
@@ -43,7 +47,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
       const success = await updateAdminConfig(updatedConfig);
       
       if (success) {
-        // Atualizar a chave através da função fornecida pelo componente pai
+        // Update the key through the function provided by the parent component
         setApiKey(keyInput.trim());
         toast.success("Chave API salva com sucesso");
         setIsSaved(true);
@@ -81,6 +85,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
           variant={keyInput ? "default" : "destructive"}
           disabled={!keyInput || (keyInput === apiKey && isSaved) || isSaving}
           onClick={handleSaveKey}
+          type="button"
         >
           {isSaving ? (
             <span className="animate-pulse">Salvando...</span>

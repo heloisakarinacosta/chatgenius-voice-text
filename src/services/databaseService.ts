@@ -29,6 +29,7 @@ export const initDatabase = async () => {
   } catch (error) {
     console.error('Error connecting to backend API:', error);
     console.log('Using localStorage fallback for database operations');
+    isDbConnected = false;
     return false;
   }
 };
@@ -132,7 +133,7 @@ export const updateAdminConfig = async (config: any) => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('Server error when updating admin config:', errorData);
         throw new Error(errorData.error || 'Failed to update admin config');
       }
@@ -234,9 +235,11 @@ export const getDbConnection = async () => {
     const response = await fetch(`${API_BASE_URL}/health`);
     if (!response.ok) throw new Error('API health check failed');
     const data = await response.json();
+    isDbConnected = data.dbConnected;
     return data.dbConnected;
   } catch (error) {
     console.error('Error checking database connection:', error);
+    isDbConnected = false;
     return null;
   }
 };
