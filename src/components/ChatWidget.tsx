@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, X, MessageCircle, Volume2 } from "lucide-react";
+import { Send, X, MessageCircle, Volume2, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "@/contexts/ChatContext";
@@ -9,6 +9,7 @@ import { callOpenAI, streamOpenAI, generateSpeech, OpenAIMessage } from "@/utils
 import ChatBubble from "./ChatBubble";
 import VoiceChat from "./VoiceChat";
 import { toast } from "sonner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface ChatWidgetProps {
   apiKey: string;
@@ -19,6 +20,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     isWidgetOpen,
     setIsWidgetOpen,
     isVoiceChatActive,
+    setIsVoiceChatActive,
     widgetConfig,
     agentConfig,
     messages,
@@ -180,6 +182,10 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setIsWidgetOpen(!isWidgetOpen);
   };
 
+  const toggleVoiceMode = (value: string) => {
+    setIsVoiceChatActive(value === "voice");
+  };
+
   return (
     <>
       {/* Chat toggle button */}
@@ -215,9 +221,21 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             <h3 className="font-medium">{widgetConfig.title}</h3>
             <p className="text-sm text-muted-foreground">{widgetConfig.subtitle}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setIsWidgetOpen(false)}>
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {agentConfig.voice.enabled && (
+              <ToggleGroup type="single" value={isVoiceChatActive ? "voice" : "text"} onValueChange={toggleVoiceMode}>
+                <ToggleGroupItem value="text" aria-label="Texto" className="h-8 w-8 p-0">
+                  <MessageCircle className="h-4 w-4" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="voice" aria-label="Voz" className="h-8 w-8 p-0">
+                  <Mic className="h-4 w-4" />
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
+            <Button variant="ghost" size="icon" onClick={() => setIsWidgetOpen(false)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Chat messages */}
@@ -227,7 +245,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               <MessageCircle className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
               <h3 className="text-lg font-medium">How can I help you today?</h3>
               <p className="text-sm text-muted-foreground mt-2">
-                Send a message to start a conversation.
+                {isVoiceChatActive 
+                  ? "Click the microphone button below to start speaking."
+                  : "Send a message to start a conversation."}
               </p>
             </div>
           ) : (
@@ -276,6 +296,20 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             </div>
           )}
         </div>
+
+        {/* Voice mode toggle */}
+        {agentConfig.voice.enabled && !isVoiceChatActive && (
+          <div className="absolute bottom-20 right-4">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-full h-10 w-10 border-dashed"
+              onClick={() => setIsVoiceChatActive(true)}
+            >
+              <Mic className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
       </div>
     </>
   );

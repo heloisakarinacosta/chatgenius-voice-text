@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Phone, PhoneOff } from "lucide-react";
+import { Mic, MicOff, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/contexts/ChatContext";
 import { transcribeAudio } from "@/utils/openai";
@@ -42,11 +42,11 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           if (transcript) {
             addMessage(transcript, "user");
           } else {
-            toast.error("Couldn't transcribe your message. Please try again.");
+            toast.error("Não foi possível transcrever sua mensagem. Por favor, tente novamente.");
           }
         } catch (error) {
           console.error("Transcription error:", error);
-          toast.error("Error transcribing audio. Please try again.");
+          toast.error("Erro ao transcrever áudio. Por favor, tente novamente.");
         }
         
         // Clear recording time and chunks
@@ -63,7 +63,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       }, 1000);
     } catch (error) {
       console.error("Error accessing microphone:", error);
-      toast.error("Couldn't access your microphone. Please check permissions.");
+      toast.error("Não foi possível acessar seu microfone. Por favor, verifique as permissões.");
     }
   };
 
@@ -98,6 +98,14 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
+  // Switch to text mode
+  const switchToTextMode = () => {
+    if (isRecording) {
+      stopRecording();
+    }
+    setIsVoiceChatActive(false);
+  };
+
   // Format recording time
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -122,47 +130,44 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
 
   return (
     <div className="flex flex-col items-center">
+      <div className="mb-3 w-full flex justify-between items-center">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="text-xs flex items-center gap-1"
+          onClick={switchToTextMode}
+        >
+          <MessageSquare className="h-3 w-3" />
+          Mudar para texto
+        </Button>
+        
+        <div className="text-xs text-muted-foreground">
+          {isRecording ? (
+            <span className="text-red-500 animate-pulse font-medium">Gravando {formatTime(recordingTime)}</span>
+          ) : (
+            "Modo de voz ativado"
+          )}
+        </div>
+      </div>
+      
       <Button
-        variant="outline"
+        variant={isRecording ? "destructive" : "default"}
         size="icon"
-        className={`rounded-full w-12 h-12 ${isVoiceChatActive ? 'bg-red-100 hover:bg-red-200 text-red-500' : ''}`}
-        onClick={toggleVoiceChat}
+        className={`rounded-full w-16 h-16 ${isRecording ? 'animate-pulse' : ''}`}
+        onClick={isRecording ? stopRecording : startRecording}
       >
-        {isVoiceChatActive ? (
-          <PhoneOff className="h-5 w-5" />
+        {isRecording ? (
+          <MicOff className="h-6 w-6" />
         ) : (
-          <Phone className="h-5 w-5" />
+          <Mic className="h-6 w-6" />
         )}
       </Button>
       
-      {isVoiceChatActive && (
-        <div className="mt-4 flex flex-col items-center">
-          <Button
-            variant={isRecording ? "destructive" : "secondary"}
-            size="icon"
-            className={`rounded-full w-14 h-14 ${isRecording ? 'animate-pulse' : ''}`}
-            onClick={isRecording ? stopRecording : startRecording}
-          >
-            {isRecording ? (
-              <MicOff className="h-6 w-6" />
-            ) : (
-              <Mic className="h-6 w-6" />
-            )}
-          </Button>
-          
-          {isRecording && (
-            <div className="mt-2 text-sm font-medium text-red-500">
-              Recording {formatTime(recordingTime)}
-            </div>
-          )}
-          
-          {!isRecording && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Press to start recording
-            </p>
-          )}
-        </div>
-      )}
+      <p className="mt-3 text-xs text-center text-muted-foreground max-w-xs">
+        {isRecording 
+          ? "Clique para parar a gravação" 
+          : "Clique no botão para começar a falar. Você pode alternar entre texto e voz a qualquer momento."}
+      </p>
     </div>
   );
 };

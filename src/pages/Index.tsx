@@ -4,14 +4,14 @@ import { Link } from "react-router-dom";
 import ChatWidget from "@/components/ChatWidget";
 import { useChat } from "@/contexts/ChatContext";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Settings } from "lucide-react";
+import { MessageCircle, Settings, Mic, Volume2 } from "lucide-react";
 
 interface IndexProps {
   apiKey: string;
 }
 
 const Index: React.FC<IndexProps> = ({ apiKey }) => {
-  const { setIsWidgetOpen, widgetConfig } = useChat();
+  const { setIsWidgetOpen, widgetConfig, agentConfig } = useChat();
   
   return (
     <div className="min-h-screen flex flex-col">
@@ -61,6 +61,21 @@ const Index: React.FC<IndexProps> = ({ apiKey }) => {
               </Button>
             </Link>
           </div>
+          
+          {agentConfig.voice.enabled && (
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <MessageCircle className="h-4 w-4" />
+                <span>Texto</span>
+              </div>
+              <span>&</span>
+              <div className="flex items-center gap-1">
+                <Mic className="h-4 w-4" />
+                <span>Voz</span>
+              </div>
+              <span>disponíveis no chat!</span>
+            </div>
+          )}
         </div>
         
         <div className="mt-16 md:mt-24 space-y-12">
@@ -77,26 +92,7 @@ const Index: React.FC<IndexProps> = ({ apiKey }) => {
             
             <div className="p-6 bg-secondary/50 rounded-lg text-center space-y-3">
               <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  width="24" 
-                  height="24" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  className="h-6 w-6 text-primary"
-                >
-                  <path d="M12 18v-6" />
-                  <path d="M8 18v-1" />
-                  <path d="M16 18v-3" />
-                  <path d="M9 6a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
-                  <path d="M12 9v3" />
-                  <path d="M9 15l-1 -3" />
-                  <path d="M15 12l1 3" />
-                </svg>
+                <Mic className="h-6 w-6 text-primary" />
               </div>
               <h3 className="text-xl font-medium">Voice Interactions</h3>
               <p className="text-muted-foreground">

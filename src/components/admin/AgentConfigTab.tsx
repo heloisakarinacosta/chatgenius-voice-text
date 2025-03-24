@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw, Volume2, FileText, HelpCircle } from "lucide-react";
+import { RefreshCw, Volume2, FileText, HelpCircle, Mic } from "lucide-react";
 import { toast } from "sonner";
 import { AgentConfig } from "@/contexts/ChatContext";
 import { 
@@ -15,6 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 
 interface AgentConfigTabProps {
   agentConfig: AgentConfig;
@@ -94,7 +95,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
           Configure your AI assistant's behavior and voice settings.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Label htmlFor="systemPrompt">System Prompt</Label>
@@ -126,9 +127,30 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
           </p>
         </div>
         
-        <div className="space-y-2">
+        <Separator />
+        
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Mic className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-medium">Voice Configuration</h3>
+          </div>
+          
           <div className="flex items-center justify-between">
-            <Label htmlFor="voiceEnabled">Voice Enabled</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="voiceEnabled" className="font-medium">Voice Enabled</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-5 w-5">
+                      <HelpCircle className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm">
+                    <p>Ativar funcionalidades de voz para permitir que os usuários conversem por voz com o assistente. O assistente também responderá por áudio.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <Switch
               id="voiceEnabled"
               checked={updatedAgentConfig.voice.enabled}
@@ -142,12 +164,12 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
             />
           </div>
           <p className="text-sm text-muted-foreground">
-            Enable voice responses from your AI assistant.
+            Habilite para permitir interações de voz bidirecionais. Os usuários poderão alternar entre texto e voz no chat.
           </p>
         </div>
         
         {updatedAgentConfig.voice.enabled && (
-          <>
+          <div className="space-y-4 border p-4 rounded-lg bg-secondary/20">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="voiceId">Voice</Label>
@@ -229,10 +251,18 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
                 Measured response time for voice generation.
               </p>
             </div>
-          </>
+
+            <div className="mt-2 p-3 bg-primary/5 rounded border border-primary/10">
+              <p className="text-sm">
+                <strong>Como funciona:</strong> Quando ativado, os usuários verão um botão de microfone no chat e poderão alternar entre texto e voz a qualquer momento. O assistente responderá com texto e áudio.
+              </p>
+            </div>
+          </div>
         )}
 
-        <div className="border-t pt-4 mt-4">
+        <Separator />
+
+        <div className="pt-2">
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-muted-foreground" />
             <Label>Arquivos de Treinamento</Label>
