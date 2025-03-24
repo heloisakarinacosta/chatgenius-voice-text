@@ -12,7 +12,10 @@ let isDbConnected = false;
 export const initDatabase = async () => {
   try {
     console.log('Attempting to connect to backend API at:', API_BASE_URL);
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      headers: { 'Cache-Control': 'no-cache' },
+      cache: 'no-store'
+    });
     
     if (!response.ok) {
       console.error('API returned error status:', response.status);
@@ -38,7 +41,10 @@ export const initDatabase = async () => {
 export const getWidgetConfig = async () => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/widget`);
+      const response = await fetch(`${API_BASE_URL}/widget`, {
+        headers: { 'Cache-Control': 'no-cache' },
+        cache: 'no-store'
+      });
       if (!response.ok) throw new Error('Failed to fetch widget config');
       return await response.json();
     } catch (error) {
@@ -57,7 +63,12 @@ export const updateWidgetConfig = async (config: any) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
       });
-      return response.ok;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Server error when updating widget config:', errorData);
+        throw new Error(errorData.error || 'Failed to update widget config');
+      }
+      return true;
     } catch (error) {
       console.error('Error updating widget config via API:', error);
       return localDb.updateWidgetConfig(config);
@@ -70,7 +81,10 @@ export const updateWidgetConfig = async (config: any) => {
 export const getAgentConfig = async () => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/agent`);
+      const response = await fetch(`${API_BASE_URL}/agent`, {
+        headers: { 'Cache-Control': 'no-cache' },
+        cache: 'no-store'
+      });
       if (!response.ok) throw new Error('Failed to fetch agent config');
       return await response.json();
     } catch (error) {
@@ -89,7 +103,12 @@ export const updateAgentConfig = async (config: any) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
       });
-      return response.ok;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Server error when updating agent config:', errorData);
+        throw new Error(errorData.error || 'Failed to update agent config');
+      }
+      return true;
     } catch (error) {
       console.error('Error updating agent config via API:', error);
       return localDb.updateAgentConfig(config);
@@ -102,7 +121,10 @@ export const updateAgentConfig = async (config: any) => {
 export const getAdminConfig = async () => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin`);
+      const response = await fetch(`${API_BASE_URL}/admin`, {
+        headers: { 'Cache-Control': 'no-cache' },
+        cache: 'no-store'
+      });
       if (!response.ok) throw new Error('Failed to fetch admin config');
       const data = await response.json();
       return {
@@ -121,7 +143,11 @@ export const getAdminConfig = async () => {
 export const updateAdminConfig = async (config: any) => {
   if (isDbConnected) {
     try {
-      console.log('Updating admin config:', config);
+      console.log('Updating admin config:', {
+        ...config,
+        apiKey: config.apiKey ? '[REDACTED]' : '' // Don't log the actual API key
+      });
+      
       const response = await fetch(`${API_BASE_URL}/admin`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -133,14 +159,24 @@ export const updateAdminConfig = async (config: any) => {
       });
       
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Server error when updating admin config:', errorData);
-        throw new Error(errorData.error || 'Failed to update admin config');
+        let errorMessage = 'Failed to update admin config';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+          console.error('Server error when updating admin config:', errorData);
+        } catch (parseError) {
+          console.error('Could not parse error response:', parseError);
+        }
+        throw new Error(errorMessage);
       }
+      
+      // Store in local storage as well for redundancy
+      await localDb.updateAdminConfig(config);
       
       return true;
     } catch (error) {
       console.error('Error updating admin config via API:', error);
+      // Fallback to local storage
       return localDb.updateAdminConfig(config);
     }
   }
@@ -232,7 +268,10 @@ export const removeTrainingFile = async (id: string) => {
 // Get database connection status
 export const getDbConnection = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      headers: { 'Cache-Control': 'no-cache' },
+      cache: 'no-store'
+    });
     if (!response.ok) throw new Error('API health check failed');
     const data = await response.json();
     isDbConnected = data.dbConnected;

@@ -20,7 +20,9 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
 
   // Synchronize local state when the apiKey prop changes
   useEffect(() => {
-    setKeyInput(apiKey);
+    if (apiKey !== keyInput) {
+      setKeyInput(apiKey);
+    }
     setIsSaved(Boolean(apiKey));
   }, [apiKey]);
 

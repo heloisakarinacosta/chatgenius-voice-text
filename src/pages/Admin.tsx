@@ -9,60 +9,47 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { initDatabase, isConnected, getAdminConfig, getDbConnection } from "@/services/databaseService";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [apiKey, setApiKey] = useState("");
   const [loginAttempts, setLoginAttempts] = useState(0);
-  const [dbConnectionStatus, setDbConnectionStatus] = useState<boolean | null>(null);
-  const { adminConfig, loadData } = useChat();
+  const { adminConfig, loadData, isDbConnected } = useChat();
   const navigate = useNavigate();
 
-  // Initialize database and check connection
+  // Initialize and check for API key
   useEffect(() => {
-    const checkConnection = async () => {
+    const initializeData = async () => {
       try {
-        console.log('Checking database connection...');
-        const isDbConnected = await initDatabase();
-        console.log('Database connection status:', isDbConnected);
-        setDbConnectionStatus(isDbConnected);
+        console.log('Initializing admin page...');
         
-        // Try to fetch the API key from config
-        const config = await getAdminConfig();
-        if (config && config.apiKey) {
-          console.log('Found API key in admin config');
-          setApiKey(config.apiKey);
-        } else {
-          console.log('No API key found in admin config');
-        }
-        
-        // Reload all data in context to stay in sync with database
+        // Load all data to ensure we have the latest
         if (loadData) {
           await loadData();
         }
         
-        setIsLoading(false);
+        // Set API key from admin config
+        if (adminConfig && adminConfig.apiKey) {
+          console.log('Found API key in admin config');
+          setApiKey(adminConfig.apiKey);
+        } else {
+          console.log('No API key found in admin config');
+        }
+        
       } catch (error) {
-        console.error('Error checking connection:', error);
-        setDbConnectionStatus(false);
+        console.error('Error initializing admin page:', error);
+      } finally {
         setIsLoading(false);
       }
     };
     
-    checkConnection();
-  }, [loadData]);
+    initializeData();
+  }, [loadData, adminConfig]);
 
-  // Refresh database connection status
-  const refreshConnectionStatus = async () => {
-    try {
-      const status = await getDbConnection();
-      setDbConnectionStatus(status !== null);
-      window.location.reload();
-    } catch (error) {
-      console.error('Error refreshing connection status:', error);
-    }
+  // Refresh page to check connection status
+  const refreshPage = () => {
+    window.location.reload();
   };
 
   const handleLogin = (username: string, password: string) => {
@@ -107,7 +94,7 @@ const Admin = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {dbConnectionStatus === false && (
+      {!isDbConnected && (
         <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
@@ -127,7 +114,7 @@ const Admin = () => {
                 <Button 
                   variant="default" 
                   size="sm" 
-                  onClick={refreshConnectionStatus}
+                  onClick={refreshPage}
                 >
                   Tentar novamente
                 </Button>
@@ -137,30 +124,6 @@ const Admin = () => {
         </Alert>
       )}
       
-      {/* Detect API Backend running but without database connection */}
-      {dbConnectionStatus !== null && !isConnected() && dbConnectionStatus !== false && (
-        <Alert className="max-w-4xl mx-auto mt-4 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
-          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          <AlertDescription className="text-yellow-600">
-            <div className="flex flex-col gap-2">
-              <p>
-                A API está rodando, mas sem conexão com o banco de dados MariaDB.
-                Verifique se o banco de dados está ativo e as credenciais estão corretas.
-              </p>
-              <div className="flex gap-2 mt-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => window.open('backend/.env.example', '_blank')}
-                >
-                  Ver Configuração
-                </Button>
-              </div>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {!isAuthenticated ? (
         <div className="min-h-screen flex items-center justify-center p-4">
           <div className="max-w-md w-full">

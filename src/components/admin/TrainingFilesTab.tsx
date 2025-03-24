@@ -1,19 +1,19 @@
-
 import React, { useState, useRef } from "react";
 import { Card, CardHeader, CardContent, CardDescription, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrainingFile } from "@/contexts/ChatContext";
+import { TrainingFile } from "@/types/chat";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { v4 as uuidv4 } from "uuid";
 
 interface TrainingFilesTabProps {
   trainingFiles: TrainingFile[];
-  addTrainingFile: (file: File) => Promise<void>;
-  removeTrainingFile: (id: string) => void;
+  addTrainingFile: (file: TrainingFile) => Promise<boolean>;
+  removeTrainingFile: (id: string) => Promise<boolean>;
 }
 
 const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
@@ -54,8 +54,26 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         return;
       }
       
-      await addTrainingFile(file);
-      toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
+      // Read file contents
+      const content = await readFileContent(file);
+      
+      // Create training file object
+      const trainingFile: TrainingFile = {
+        id: uuidv4(),
+        name: file.name,
+        content,
+        size: file.size,
+        type: file.type,
+        timestamp: new Date()
+      };
+      
+      const success = await addTrainingFile(trainingFile);
+      
+      if (success) {
+        toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
+      } else {
+        toast.error(`Erro ao adicionar arquivo "${file.name}"`);
+      }
       
       // Reset the file input
       if (fileInputRef.current) {
@@ -69,13 +87,37 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     }
   };
 
+  const readFileContent = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          resolve(e.target.result as string);
+        } else {
+          reject(new Error("Failed to read file"));
+        }
+      };
+      reader.onerror = () => reject(new Error("Error reading file"));
+      reader.readAsText(file);
+    });
+  };
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const handleRemoveFile = (id: string, name: string) => {
-    removeTrainingFile(id);
-    toast.success(`Arquivo "${name}" removido com sucesso`);
+  const handleRemoveFile = async (id: string, name: string) => {
+    try {
+      const success = await removeTrainingFile(id);
+      if (success) {
+        toast.success(`Arquivo "${name}" removido com sucesso`);
+      } else {
+        toast.error(`Erro ao remover arquivo "${name}"`);
+      }
+    } catch (error) {
+      console.error("Error removing file:", error);
+      toast.error(`Erro ao remover arquivo "${name}"`);
+    }
   };
 
   const toggleFilePreview = (id: string) => {
