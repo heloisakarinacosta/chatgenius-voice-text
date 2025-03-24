@@ -1,12 +1,12 @@
+
 import React, { useState, useRef, useEffect } from "react";
-import { Send, X, MessageCircle, Volume2, Mic, MicOff, Settings } from "lucide-react";
+import { Send, X, MessageCircle, Volume2, Mic, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "@/contexts/ChatContext";
 import { cn } from "@/lib/utils";
 import { callOpenAI, streamOpenAI, generateSpeech, OpenAIMessage } from "@/utils/openai";
 import ChatBubble from "./ChatBubble";
-import VoiceChat from "./VoiceChat";
 import VoiceChatAgent from "./VoiceChatAgent";
 import { toast } from "sonner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -369,8 +369,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 <Button>Configurar API Key</Button>
               </Link>
             </div>
-          ) : messages.length ===
-           0 ? (
+          ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <MessageCircle className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
               <h3 className="text-lg font-medium">Como posso ajudar você hoje?</h3>

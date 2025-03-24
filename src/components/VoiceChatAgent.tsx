@@ -1,34 +1,30 @@
 
-import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Send, StopCircle } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Mic, MicOff, Send, StopCircle, Bot, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { transcribeAudio, streamOpenAI, generateSpeech, OpenAIMessage } from "@/utils/openai";
-import { useChat } from "@/contexts/ChatContext";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
+import { useChat } from "@/contexts/ChatContext";
+import { transcribeAudio, OpenAIMessage, streamOpenAI, generateSpeech } from "@/utils/openai";
 
 interface VoiceChatAgentProps {
   apiKey: string;
 }
 
 const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
+  const { agentConfig, messages, addMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [textInputMode, setTextInputMode] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  
-  const { 
-    messages, 
-    addMessage, 
-    agentConfig,
-    setIsVoiceChatActive
-  } = useChat();
 
   useEffect(() => {
-    // Inicializa o elemento de áudio
     if (!audioRef.current) {
       audioRef.current = new Audio();
       
@@ -47,114 +43,138 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioRef.current.onerror = (e) => {
         console.error("Audio playback error:", e);
         setIsSpeaking(false);
+        toast.error("Erro ao reproduzir áudio");
       };
     }
     
     return () => {
+      stopRecording();
       if (audioRef.current) {
         if (audioRef.current.src) {
           URL.revokeObjectURL(audioRef.current.src);
         }
+        audioRef.current = null;
       }
     };
   }, []);
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      mediaRecorder.ondataavailable = (event) => {
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      
+      mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
       
-      mediaRecorder.onstop = async () => {
+      mediaRecorderRef.current.onstop = async () => {
+        if (audioChunksRef.current.length === 0) return;
+        
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         processAudioInput(audioBlob);
       };
       
-      mediaRecorder.start();
+      mediaRecorderRef.current.start();
       setIsRecording(true);
-      toast.info("Gravação iniciada. Fale agora...");
     } catch (error) {
-      console.error("Error accessing microphone:", error);
-      toast.error("Erro ao acessar microfone. Verifique as permissões.");
+      console.error("Error starting recording:", error);
+      toast.error("Não foi possível acessar o microfone", {
+        description: "Verifique se você concedeu permissão para usar o microfone."
+      });
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       setIsRecording(false);
-      
-      // Interromper todos os tracks
-      if (mediaRecorderRef.current.stream) {
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      }
-      
-      toast.info("Processando sua fala...");
-      setIsProcessing(true);
     }
   };
 
   const processAudioInput = async (audioBlob: Blob) => {
+    if (!apiKey) {
+      toast.error("API Key não configurada");
+      return;
+    }
+    
+    setIsProcessing(true);
+    
     try {
-      const transcription = await transcribeAudio(audioBlob, apiKey);
+      // Transcrever o áudio
+      const transcript = await transcribeAudio(audioBlob, apiKey);
       
-      if (transcription.trim()) {
-        addMessage(transcription, "user");
-        await sendToAI(transcription);
-      } else {
-        toast.error("Não consegui entender o que você disse. Por favor, tente novamente.");
+      if (!transcript || transcript.trim() === "") {
+        toast.error("Não foi possível entender o áudio", {
+          description: "Por favor, tente falar mais claramente."
+        });
         setIsProcessing(false);
+        return;
       }
+      
+      // Adicionar a mensagem do usuário
+      addMessage(transcript, "user");
+      
+      // Processar a resposta
+      await processResponse(transcript);
     } catch (error) {
-      console.error("Error transcribing audio:", error);
-      toast.error("Erro ao transcrever áudio. Por favor, tente novamente.");
+      console.error("Error processing audio:", error);
+      toast.error("Erro ao processar áudio", {
+        description: error instanceof Error ? error.message : "Tente novamente."
+      });
       setIsProcessing(false);
     }
   };
 
-  const sendToAI = async (userMessage: string) => {
-    if (!apiKey) {
-      toast.error("API Key não configurada");
-      setIsProcessing(false);
-      return;
-    }
-
+  const processResponse = async (userMessage: string) => {
+    const conversationHistory: OpenAIMessage[] = [
+      { role: "system", content: agentConfig.systemPrompt },
+      ...messages.map(msg => ({ 
+        role: msg.role as "user" | "assistant" | "system", 
+        content: msg.content 
+      })),
+      { role: "user", content: userMessage },
+    ];
+    
+    let assistantMessage = "";
+    
     try {
-      const conversationHistory: OpenAIMessage[] = [
-        { role: "system", content: agentConfig.systemPrompt },
-        ...messages.map(msg => ({ 
-          role: msg.role as "user" | "assistant" | "system", 
-          content: msg.content 
-        })),
-        { role: "user", content: userMessage },
-      ];
-      
-      let assistantMessage = "";
-      
+      // Adicionar espaço para a resposta do assistente
       addMessage("", "assistant");
       
+      // Configurar opções para streaming
+      const streamOptions: any = {
+        messages: conversationHistory,
+        model: agentConfig.model,
+        temperature: agentConfig.temperature,
+        max_tokens: agentConfig.maxTokens,
+        stream: true,
+        trainingFiles: agentConfig.trainingFiles,
+        detectEmotion: agentConfig.detectEmotion
+      };
+      
+      // Adicionar funções se disponíveis
+      if (agentConfig.functions && agentConfig.functions.length > 0) {
+        streamOptions.functions = agentConfig.functions.map(fn => ({
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters,
+        }));
+      }
+      
+      // Iniciar streaming da resposta
       await streamOpenAI(
-        {
-          messages: conversationHistory,
-          model: agentConfig.model,
-          temperature: agentConfig.temperature,
-          max_tokens: agentConfig.maxTokens,
-          trainingFiles: agentConfig.trainingFiles,
-          detectEmotion: agentConfig.detectEmotion,
-          stream: true
-        },
+        streamOptions,
         apiKey,
         {
           onMessage: (chunk) => {
             assistantMessage += chunk;
             
+            // Atualizar a mensagem na conversa
             const updatedMessages = [...messages];
             if (updatedMessages.length > 0) {
               const lastAssistantMessageIndex = updatedMessages.findIndex(
@@ -168,14 +188,15 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             }
           },
           onComplete: async (fullMessage) => {
+            // Gerar áudio da resposta completa
             try {
-              // Gerar áudio da resposta
               const audioBuffer = await generateSpeech(
                 fullMessage,
                 agentConfig.voice.voiceId,
                 apiKey
               );
               
+              // Reproduzir o áudio
               const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
               const audioUrl = URL.createObjectURL(audioBlob);
               
@@ -188,7 +209,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                 audioRef.current.play().catch(error => {
                   console.error("Erro ao reproduzir áudio:", error);
                   toast.error("Erro ao reproduzir áudio", {
-                    description: "Seu navegador bloqueou a reprodução automática. Clique para ouvir a resposta.",
                     action: {
                       label: "Reproduzir",
                       onClick: () => audioRef.current?.play(),
@@ -196,117 +216,156 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                   });
                 });
               }
-              
-              setIsProcessing(false);
             } catch (error) {
-              console.error("Error generating speech:", error);
-              toast.error("Erro ao gerar fala. Continuando apenas com texto.");
-              setIsProcessing(false);
+              console.error("Erro ao gerar fala:", error);
+              toast.error("Não foi possível gerar a fala");
             }
+            
+            setIsProcessing(false);
           },
           onError: (error) => {
-            console.error("Error from OpenAI:", error);
+            console.error("Erro na resposta da IA:", error);
+            addMessage("Desculpe, ocorreu um erro ao processar sua solicitação.", "assistant");
             setIsProcessing(false);
-            toast.error("Erro ao processar resposta");
-          }
+            
+            toast.error("Erro ao obter resposta", {
+              description: error instanceof Error ? error.message : "Tente novamente."
+            });
+          },
         }
       );
     } catch (error) {
-      console.error("Error in AI processing:", error);
-      toast.error("Erro ao processar resposta. Por favor, tente novamente.");
+      console.error("Error getting response:", error);
       setIsProcessing(false);
+      
+      toast.error("Erro ao processar resposta", {
+        description: "Não foi possível obter uma resposta do assistente."
+      });
     }
   };
 
-  const handleSendTextMessage = () => {
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const handleSendText = () => {
     if (!inputValue.trim() || isProcessing) return;
     
     const userMessage = inputValue.trim();
     setInputValue("");
     addMessage(userMessage, "user");
     setIsProcessing(true);
-    sendToAI(userMessage);
+    
+    processResponse(userMessage);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSendTextMessage();
+      handleSendText();
     }
   };
 
+  const toggleInputMode = () => {
+    setTextInputMode(!textInputMode);
+  };
+
+  if (!agentConfig.voice.enabled) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          A funcionalidade de voz está desativada. Ative-a nas configurações do agente.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-2 w-full">
-      <div className="flex items-center gap-2">
-        <Input
-          placeholder="Digite sua mensagem..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyPress}
-          disabled={isProcessing || !apiKey || isRecording}
-          className="flex-1"
-        />
-        <Button 
-          variant="default" 
-          size="icon"
-          disabled={!inputValue.trim() || isProcessing || !apiKey || isRecording}
-          onClick={handleSendTextMessage}
-        >
-          <Send className="h-5 w-5" />
-        </Button>
-      </div>
-      
-      <div className="w-full flex justify-center items-center">
-        <div className="w-full flex items-center justify-between rounded-lg p-2 bg-secondary/20">
-          <div className="text-xs text-muted-foreground">
-            {isRecording ? "Gravando... Clique para parar" : 
-             isSpeaking ? "Falando..." : 
-             isProcessing ? "Processando..." : 
-             "Clique no microfone para falar"}
-          </div>
-          
-          <div className="flex items-center gap-1">
-            {isSpeaking && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 rounded-full"
-                onClick={() => {
-                  if (audioRef.current) {
-                    audioRef.current.pause();
-                    setIsSpeaking(false);
-                  }
-                }}
-              >
-                <StopCircle className="h-4 w-4" />
-              </Button>
-            )}
-            
-            <Button
-              variant={isRecording ? "destructive" : "secondary"}
-              size="sm"
-              className={`h-10 w-10 p-0 rounded-full ${isRecording ? "animate-pulse" : ""}`}
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={isProcessing || isSpeaking}
-            >
-              {isRecording ? (
-                <MicOff className="h-5 w-5" />
-              ) : (
-                <Mic className="h-5 w-5" />
-              )}
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-full ml-1"
-              onClick={() => setIsVoiceChatActive(false)}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+    <div className="space-y-4">
+      {isSpeaking && (
+        <div className="flex justify-center mb-2">
+          <div className="bg-primary/10 text-primary text-xs px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
+            <Volume2 className="h-3 w-3" />
+            <span>Falando...</span>
           </div>
         </div>
-      </div>
+      )}
+      
+      {textInputMode ? (
+        <div className="flex gap-2">
+          <Input
+            placeholder="Digite sua mensagem..."
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={isProcessing}
+            className="flex-1"
+          />
+          <Button 
+            size="icon"
+            disabled={!inputValue.trim() || isProcessing}
+            onClick={handleSendText}
+          >
+            <Send className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleInputMode}
+            className="flex-shrink-0"
+            title="Alternar para entrada de voz"
+          >
+            <Mic className="h-5 w-5" />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2">
+          {isProcessing ? (
+            <div className="flex items-center justify-center w-full p-4">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-2 text-sm text-muted-foreground">Processando...</span>
+            </div>
+          ) : (
+            <>
+              <Button
+                size="lg"
+                variant={isRecording ? "destructive" : "default"}
+                onClick={handleToggleRecording}
+                className="rounded-full h-16 w-16"
+                disabled={isProcessing || isSpeaking}
+              >
+                {isRecording ? (
+                  <StopCircle className="h-8 w-8" />
+                ) : (
+                  <Mic className="h-8 w-8" />
+                )}
+              </Button>
+              
+              <p className="text-sm text-center text-muted-foreground">
+                {isRecording 
+                  ? "Clique para parar de gravar" 
+                  : isSpeaking 
+                    ? "Aguarde a resposta terminar..." 
+                    : "Clique para falar"}
+              </p>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleInputMode}
+                className="mt-2"
+              >
+                Alternar para texto
+              </Button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
