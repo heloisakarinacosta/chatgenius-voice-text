@@ -31,8 +31,10 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [position, setPosition] = useState<string>("");
 
   useEffect(() => {
@@ -58,6 +60,41 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       }, 300);
     }
   }, [isWidgetOpen, isVoiceChatActive]);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      
+      audioRef.current.onplay = () => {
+        setIsSpeaking(true);
+      };
+      
+      audioRef.current.onended = () => {
+        setIsSpeaking(false);
+        if (audioRef.current && audioRef.current.src) {
+          URL.revokeObjectURL(audioRef.current.src);
+          audioRef.current.src = "";
+        }
+      };
+      
+      audioRef.current.onerror = (e) => {
+        console.error("Audio playback error:", e);
+        setIsSpeaking(false);
+        toast.error("Erro ao reproduzir áudio", {
+          description: "Não foi possível reproduzir a resposta em áudio."
+        });
+      };
+    }
+    
+    return () => {
+      if (audioRef.current) {
+        if (audioRef.current.src) {
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isProcessing) return;
@@ -130,6 +167,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             
             if (agentConfig.voice.enabled && isVoiceChatActive) {
               try {
+                console.log("Voice active, generating speech...");
                 const audioBuffer = await generateSpeech(
                   fullMessage,
                   agentConfig.voice.voiceId,
@@ -138,16 +176,42 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 
                 const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
                 const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
                 
-                audio.onended = () => {
-                  URL.revokeObjectURL(audioUrl);
-                };
-                
-                audio.play();
+                if (audioRef.current) {
+                  if (audioRef.current.src) {
+                    URL.revokeObjectURL(audioRef.current.src);
+                  }
+                  
+                  audioRef.current.src = audioUrl;
+                  audioRef.current.play().catch(error => {
+                    console.error("Error playing audio:", error);
+                    toast.error("Erro ao reproduzir áudio", {
+                      description: "Seu navegador bloqueou a reprodução automática. Clique para ouvir a resposta.",
+                      action: {
+                        label: "Reproduzir",
+                        onClick: () => audioRef.current?.play(),
+                      }
+                    });
+                  });
+                }
               } catch (error) {
                 console.error("Error generating speech:", error);
-                toast.error("Não foi possível gerar a fala. Por favor, verifique suas configurações.");
+                let errorMessage = "Não foi possível gerar a fala. Por favor, verifique suas configurações.";
+                let errorDescription = "";
+                
+                if (error instanceof Error) {
+                  if (error.message.includes("limit")) {
+                    errorMessage = "Limite da API de voz excedido";
+                    errorDescription = "Você excedeu seu limite de uso para a API de voz. Tente novamente mais tarde.";
+                  } else if (error.message.includes("key")) {
+                    errorMessage = "Problema com a chave da API";
+                    errorDescription = "Sua chave da API não tem permissão para usar o serviço de voz.";
+                  }
+                }
+                
+                toast.error(errorMessage, {
+                  description: errorDescription,
+                });
               }
             }
             
@@ -317,6 +381,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               }} 
               isTyping={true}
             />
+          )}
+          {isSpeaking && (
+            <div className="flex justify-center mt-2 mb-2">
+              <div className="bg-primary/10 text-primary text-xs px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
+                <Volume2 className="h-3 w-3" />
+                <span>Falando...</span>
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>

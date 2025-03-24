@@ -14,14 +14,20 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const { isVoiceChatActive, setIsVoiceChatActive, addMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Initialize media recorder
   const startRecording = async () => {
     try {
+      console.log("Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      console.log("Microphone access granted, creating MediaRecorder");
       const mediaRecorder = new MediaRecorder(stream);
       
       mediaRecorderRef.current = mediaRecorder;
@@ -34,19 +40,47 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       };
       
       mediaRecorder.onstop = async () => {
+        if (audioChunksRef.current.length === 0) {
+          console.log("No audio recorded");
+          return;
+        }
+        
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        console.log(`Audio recorded: ${audioBlob.size} bytes`);
         
         try {
+          setIsTranscribing(true);
+          console.log("Transcribing audio...");
           const transcript = await transcribeAudio(audioBlob, apiKey);
+          setIsTranscribing(false);
           
           if (transcript) {
+            console.log(`Transcription: "${transcript}"`);
             addMessage(transcript, "user");
           } else {
+            console.error("Empty transcript received");
             toast.error("Não foi possível transcrever sua mensagem. Por favor, tente novamente.");
           }
         } catch (error) {
+          setIsTranscribing(false);
           console.error("Transcription error:", error);
-          toast.error("Erro ao transcrever áudio. Por favor, tente novamente.");
+          
+          let errorMessage = "Erro ao transcrever áudio. Por favor, tente novamente.";
+          let errorDescription = "";
+          
+          if (error instanceof Error) {
+            if (error.message.includes("limit") || error.message.includes("quota")) {
+              errorMessage = "Limite da API de transcrição excedido";
+              errorDescription = "Você excedeu seu limite de uso para a API de transcrição. Tente novamente mais tarde.";
+            } else if (error.message.includes("key")) {
+              errorMessage = "Problema com a chave da API";
+              errorDescription = "Sua chave da API não tem permissão para usar o serviço de transcrição.";
+            }
+          }
+          
+          toast.error(errorMessage, {
+            description: errorDescription,
+          });
         }
         
         // Clear recording time and chunks
@@ -63,17 +97,38 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       }, 1000);
     } catch (error) {
       console.error("Error accessing microphone:", error);
-      toast.error("Não foi possível acessar seu microfone. Por favor, verifique as permissões.");
+      
+      let errorMessage = "Não foi possível acessar seu microfone. Por favor, verifique as permissões.";
+      let description = "";
+      
+      if (error instanceof Error) {
+        if (error.name === "NotAllowedError") {
+          errorMessage = "Acesso ao microfone foi negado";
+          description = "Por favor, permita o acesso ao microfone nas configurações do seu navegador.";
+        } else if (error.name === "NotFoundError") {
+          errorMessage = "Microfone não encontrado";
+          description = "Seu dispositivo não possui um microfone ou ele não está disponível.";
+        }
+      }
+      
+      toast.error(errorMessage, {
+        description,
+      });
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
+      console.log("Stopping recording");
       mediaRecorderRef.current.stop();
       
       // Stop all tracks in the stream
-      if (mediaRecorderRef.current.stream) {
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          console.log(`Stopping track: ${track.kind}`);
+          track.stop();
+        });
+        streamRef.current = null;
       }
       
       setIsRecording(false);
@@ -121,9 +176,10 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
-        if (mediaRecorderRef.current.stream) {
-          mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-        }
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
       }
     };
   }, []);
@@ -144,6 +200,8 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         <div className="text-xs text-muted-foreground">
           {isRecording ? (
             <span className="text-red-500 animate-pulse font-medium">Gravando {formatTime(recordingTime)}</span>
+          ) : isTranscribing ? (
+            <span className="text-amber-500 animate-pulse font-medium">Transcrevendo...</span>
           ) : (
             "Modo de voz ativado"
           )}
@@ -155,6 +213,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         size="icon"
         className={`rounded-full w-16 h-16 ${isRecording ? 'animate-pulse' : ''}`}
         onClick={isRecording ? stopRecording : startRecording}
+        disabled={isTranscribing}
       >
         {isRecording ? (
           <MicOff className="h-6 w-6" />
@@ -166,6 +225,8 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       <p className="mt-3 text-xs text-center text-muted-foreground max-w-xs">
         {isRecording 
           ? "Clique para parar a gravação" 
+          : isTranscribing
+          ? "Transcrevendo sua mensagem..."
           : "Clique no botão para começar a falar. Você pode alternar entre texto e voz a qualquer momento."}
       </p>
     </div>

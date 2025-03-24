@@ -163,6 +163,9 @@ export async function generateSpeech(
   voiceId: string, 
   apiKey: string
 ): Promise<ArrayBuffer> {
+  console.log(`Generating speech for text: ${text.substring(0, 50)}...`);
+  console.log(`Using voice ID: ${voiceId}`);
+  
   try {
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
@@ -178,10 +181,22 @@ export async function generateSpeech(
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || "Failed to generate speech");
+      console.error(`Speech generation error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text();
+      console.error(`Error response: ${errorBody}`);
+      
+      let errorMessage = "Failed to generate speech";
+      try {
+        const errorJson = JSON.parse(errorBody);
+        errorMessage = errorJson.error?.message || errorMessage;
+      } catch (e) {
+        // If parsing fails, use the default message
+      }
+      
+      throw new Error(errorMessage);
     }
 
+    console.log("Speech generated successfully");
     return await response.arrayBuffer();
   } catch (error) {
     console.error("Error generating speech:", error);
