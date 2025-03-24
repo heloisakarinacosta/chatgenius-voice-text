@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { TrainingFile } from "@/contexts/ChatContext";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { File, FileUp, Trash2, FileText } from "lucide-react";
+import { File, FileUp, Trash2, FileText, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface TrainingFilesTabProps {
   trainingFiles: TrainingFile[];
@@ -21,6 +22,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
   removeTrainingFile,
 }) => {
   const [isUploading, setIsUploading] = useState(false);
+  const [openFileId, setOpenFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +75,18 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     toast.success(`Arquivo "${name}" removido com sucesso`);
   };
 
+  const toggleFilePreview = (id: string) => {
+    setOpenFileId(openFileId === id ? null : id);
+  };
+
+  // Get file icon based on file extension
+  const getFileIcon = (fileName: string) => {
+    if (fileName.endsWith(".json")) return "JSON";
+    if (fileName.endsWith(".csv")) return "CSV";
+    if (fileName.endsWith(".md")) return "MD";
+    return "TXT";
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -109,7 +123,13 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label>Arquivos Carregados ({trainingFiles.length})</Label>
+          <div className="flex items-center justify-between">
+            <Label>Arquivos Carregados ({trainingFiles.length})</Label>
+            {trainingFiles.length > 0 && (
+              <p className="text-xs text-muted-foreground">Clique em um arquivo para ver o conteúdo</p>
+            )}
+          </div>
+          
           {trainingFiles.length === 0 ? (
             <div className="bg-muted p-4 rounded-md text-center text-muted-foreground">
               <FileText className="h-6 w-6 mx-auto mb-2" />
@@ -121,37 +141,68 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
           ) : (
             <div className="space-y-2">
               {trainingFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center justify-between p-3 bg-muted rounded-md"
+                <Collapsible 
+                  key={file.id} 
+                  open={openFileId === file.id}
+                  onOpenChange={() => toggleFilePreview(file.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <File className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatBytes(file.size)} • {new Date(file.timestamp).toLocaleString()}
-                      </p>
+                  <CollapsibleTrigger asChild>
+                    <div className="flex items-center justify-between p-3 bg-muted rounded-md cursor-pointer hover:bg-muted/80">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center h-8 w-8 rounded bg-primary/10 text-primary text-xs font-mono">
+                          {getFileIcon(file.name)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBytes(file.size)} • {new Date(file.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveFile(file.id, file.name);
+                          }}
+                          className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveFile(file.id, file.name)}
-                    className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 p-3 border rounded-md bg-muted/50 text-sm font-mono overflow-auto max-h-40">
+                      {file.content.length > 500 
+                        ? file.content.substring(0, 500) + "..." 
+                        : file.content}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               ))}
             </div>
           )}
         </div>
+        
+        <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 rounded-md">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <div className="text-sm">
+            <p>Estes arquivos são usados para melhorar o conhecimento do seu assistente AI.</p>
+            <p className="mt-1">Conteúdo sensível não deve ser enviado, pois será usado para treinamento.</p>
+          </div>
+        </div>
       </CardContent>
-      <CardFooter>
-        <p className="text-sm text-muted-foreground">
-          Estes arquivos são usados para fornecer contexto e conhecimento adicional para o agente AI.
-        </p>
+      <CardFooter className="border-t pt-4">
+        <div className="space-y-1 w-full">
+          <h4 className="text-sm font-medium">Como os arquivos são utilizados?</h4>
+          <p className="text-sm text-muted-foreground">
+            Os conteúdos dos arquivos são enviados à OpenAI como contexto adicional, 
+            permitindo que o assistente responda com base nesses dados específicos.
+          </p>
+        </div>
       </CardFooter>
     </Card>
   );

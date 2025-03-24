@@ -6,9 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw, Volume2, FileText } from "lucide-react";
+import { RefreshCw, Volume2, FileText, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AgentConfig } from "@/contexts/ChatContext";
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AgentConfigTabProps {
   agentConfig: AgentConfig;
@@ -90,7 +96,21 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="systemPrompt">System Prompt</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="systemPrompt">System Prompt</Label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-5 w-5">
+                    <HelpCircle className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">
+                  <p>As instruções iniciais fornecidas ao assistente AI que definem seu comportamento e conhecimento.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           <Textarea
             id="systemPrompt"
             value={updatedAgentConfig.systemPrompt}
@@ -102,7 +122,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
             placeholder="You are a helpful assistant..."
           />
           <p className="text-sm text-muted-foreground">
-            This is the instruction that primes your AI assistant's behavior and knowledge.
+            Este é o prompt de sistema que define o comportamento e conhecimento do seu assistente AI.
           </p>
         </div>
         
@@ -153,13 +173,22 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={testVoiceLatency}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={testVoiceLatency}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Testar latência da voz</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
               <div className="space-y-2">
@@ -213,6 +242,15 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
               ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s). Acesse a aba "Arquivos" para gerenciar.`
               : 'Nenhum arquivo carregado. Acesse a aba "Arquivos" para adicionar arquivos de treinamento.'}
           </p>
+          <div className="mt-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => document.querySelector('[value="files"]')?.dispatchEvent(new MouseEvent('click'))}
+            >
+              Gerenciar Arquivos
+            </Button>
+          </div>
         </div>
       </CardContent>
       <CardFooter>

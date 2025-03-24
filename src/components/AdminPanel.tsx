@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageCircle, Terminal, Settings, Code, FileText } from "lucide-react";
+import { MessageCircle, Terminal, Settings, Code, FileText, AlertTriangle } from "lucide-react";
 import { AgentFunction, useChat } from "@/contexts/ChatContext";
 import ApiKeySection from "@/components/admin/ApiKeySection";
 import WidgetConfigTab from "@/components/admin/WidgetConfigTab";
@@ -9,6 +9,7 @@ import AgentConfigTab from "@/components/admin/AgentConfigTab";
 import FunctionsTab from "@/components/admin/FunctionsTab";
 import SettingsTab from "@/components/admin/SettingsTab";
 import TrainingFilesTab from "@/components/admin/TrainingFilesTab";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface AdminPanelProps {
   apiKey: string;
@@ -28,6 +29,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
     removeTrainingFile
   } = useChat();
   const [functions, setFunctions] = useState<AgentFunction[]>(agentConfig.functions);
+  const [activeTab, setActiveTab] = useState("widget");
   
   // Update functions when agentConfig changes
   useEffect(() => {
@@ -44,13 +46,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
     updateAgentConfig(updatedConfig);
   };
   
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+  };
+  
   return (
     <div className="container max-w-4xl py-6">
       <h1 className="text-3xl font-bold mb-6">Admin Panel</h1>
       
+      {!apiKey && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Por favor, configure sua chave da API OpenAI para que o assistente funcione corretamente.
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <ApiKeySection apiKey={apiKey} setApiKey={setApiKey} />
       
-      <Tabs defaultValue="widget" className="space-y-4">
+      <Tabs defaultValue="widget" value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid grid-cols-5">
           <TabsTrigger value="widget">
             <MessageCircle className="h-4 w-4 mr-2" />
