@@ -1,10 +1,12 @@
 
-import React from "react";
+import React, { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 import { AgentFunction } from "@/contexts/ChatContext";
 
 export interface FunctionFormState {
@@ -29,12 +31,50 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   editingFunctionIndex,
   cancelEditing,
 }) => {
+  const [parametersError, setParametersError] = useState<string | null>(null);
+  
   // Function to handle parameter changes
   const handleParameterChange = (value: string) => {
     setNewFunction({
       ...newFunction,
       parameters: value
     });
+    
+    // Validate JSON
+    try {
+      JSON.parse(value);
+      setParametersError(null);
+    } catch (e) {
+      setParametersError("Invalid JSON format: " + e.message);
+    }
+  };
+  
+  const handleSubmit = () => {
+    // Validate required fields
+    if (!newFunction.name) {
+      toast.error("Function name is required");
+      return;
+    }
+    
+    if (!newFunction.description) {
+      toast.error("Function description is required");
+      return;
+    }
+    
+    if (!newFunction.webhook) {
+      toast.error("Webhook URL is required");
+      return;
+    }
+    
+    // Validate parameters JSON
+    try {
+      if (typeof newFunction.parameters === 'string') {
+        JSON.parse(newFunction.parameters);
+      }
+      addOrUpdateFunction();
+    } catch (e) {
+      toast.error("Invalid parameters JSON: " + e.message);
+    }
   };
 
   return (
@@ -81,7 +121,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="funcParams">Parameters (JSON)</Label>
+        <Label htmlFor="funcParams">Parameters (JSON Schema)</Label>
         <Textarea
           id="funcParams"
           value={typeof newFunction.parameters === 'object' 
@@ -104,11 +144,22 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   },
   "required": ["date", "time"]
 }`}
-          className="font-mono text-sm"
+          className={`font-mono text-sm ${parametersError ? 'border-destructive' : ''}`}
         />
+        {parametersError && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {parametersError}
+            </AlertDescription>
+          </Alert>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">
+          The parameters should be a valid JSON Schema object. This defines what parameters the function accepts.
+        </p>
       </div>
       <div className="flex items-center gap-2">
-        <Button onClick={addOrUpdateFunction}>
+        <Button onClick={handleSubmit}>
           {editingFunctionIndex !== null ? "Update Function" : "Add Function"}
         </Button>
         {editingFunctionIndex !== null && (

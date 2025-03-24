@@ -7,12 +7,14 @@ interface FunctionListProps {
   functions: AgentFunction[];
   onEditFunction: (index: number) => void;
   onDeleteFunction: (index: number) => void;
+  onTestFunction?: (func: AgentFunction) => void;
 }
 
 const FunctionList: React.FC<FunctionListProps> = ({
   functions,
   onEditFunction,
   onDeleteFunction,
+  onTestFunction,
 }) => {
   if (functions.length === 0) {
     return (
@@ -30,6 +32,7 @@ const FunctionList: React.FC<FunctionListProps> = ({
           func={func}
           onEdit={() => onEditFunction(index)}
           onDelete={() => onDeleteFunction(index)}
+          onTest={onTestFunction && (() => onTestFunction(func))}
         />
       ))}
     </div>

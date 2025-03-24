@@ -1,4 +1,3 @@
-
 export interface OpenAIMessage {
   role: "user" | "assistant" | "system";
   content: string;
@@ -32,59 +31,70 @@ export interface StreamCallbacks {
   onMessage?: (message: string) => void;
   onComplete?: (fullMessage: string) => void;
   onError?: (error: any) => void;
+  onFunctionCall?: (functionName: string, parameters: any) => Promise<string>;
 }
 
-export async function callOpenAI(options: OpenAICompletionOptions, apiKey: string): Promise<string> {
+const prepareMessages = (options: OpenAICompletionOptions): OpenAIMessage[] => {
+  let messages = [...options.messages];
+  
+  // Add training files as context if they exist
+  if (options.trainingFiles && options.trainingFiles.length > 0) {
+    // Create a context message with all training files content
+    const trainingContent = options.trainingFiles.map(file => {
+      return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
+    }).join("\n");
+    
+    // Insert the training content after the system message
+    const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+    if (systemMessageIndex !== -1) {
+      // Append to existing system message
+      messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
+    } else {
+      // Add as a new system message if no system message exists
+      messages.unshift({
+        role: "system",
+        content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
+      });
+    }
+  }
+
+  // Add emotion detection directive if enabled
+  if (options.detectEmotion) {
+    // Find the last user message using a traditional approach instead of findLast
+    let lastUserMessage = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserMessage = messages[i];
+        break;
+      }
+    }
+    
+    if (lastUserMessage) {
+      messages = [
+        ...messages,
+        {
+          role: "system",
+          content: "Por favor, antes de responder, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
+        }
+      ];
+    }
+  }
+
+  return messages;
+};
+
+export async function callOpenAI(
+  options: OpenAICompletionOptions, 
+  apiKey: string, 
+  functionCallbacks?: Record<string, (params: any) => Promise<string>>
+): Promise<string> {
   if (!apiKey) {
     throw new Error("API_KEY_MISSING");
   }
 
   try {
-    // Prepare messages with training files if available
-    let messages = [...options.messages];
-    
-    // Add training files as context if they exist
-    if (options.trainingFiles && options.trainingFiles.length > 0) {
-      // Create a context message with all training files content
-      const trainingContent = options.trainingFiles.map(file => {
-        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
-      }).join("\n");
-      
-      // Insert the training content after the system message
-      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-      if (systemMessageIndex !== -1) {
-        // Append to existing system message
-        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
-      } else {
-        // Add as a new system message if no system message exists
-        messages.unshift({
-          role: "system",
-          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
-        });
-      }
-    }
-
-    // Add emotion detection directive if enabled
-    if (options.detectEmotion) {
-      // Find the last user message using a traditional approach instead of findLast
-      let lastUserMessage = null;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === "user") {
-          lastUserMessage = messages[i];
-          break;
-        }
-      }
-      
-      if (lastUserMessage) {
-        messages = [
-          ...messages,
-          {
-            role: "system",
-            content: "Por favor, antes de responder, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
-          }
-        ];
-      }
-    }
+    // Prepare messages with training files and emotion detection
+    let messages = prepareMessages(options);
 
     const requestBody: any = {
       model: options.model || "gpt-4o-mini",
@@ -96,7 +106,15 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
 
     // Only include functions if they exist and are not empty
     if (options.functions && options.functions.length > 0) {
-      requestBody.functions = options.functions;
+      requestBody.tools = options.functions.map(func => ({
+        type: "function",
+        function: {
+          name: func.name,
+          description: func.description,
+          parameters: func.parameters
+        }
+      }));
+      requestBody.tool_choice = "auto";
     }
 
     console.log("Enviando requisição para OpenAI API:", {
@@ -129,6 +147,53 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
     }
 
     const data = await response.json();
+    
+    // Handle function call if present
+    if (data.choices[0].message.tool_calls && data.choices[0].message.tool_calls.length > 0 && functionCallbacks) {
+      const toolCall = data.choices[0].message.tool_calls[0];
+      const functionName = toolCall.function.name;
+      const parameters = JSON.parse(toolCall.function.arguments);
+      
+      if (functionCallbacks[functionName]) {
+        // Execute the function
+        const functionResult = await functionCallbacks[functionName](parameters);
+        
+        // Add function result to messages and call the API again
+        const updatedMessages = [
+          ...messages,
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: functionName,
+                  arguments: toolCall.function.arguments
+                }
+              }
+            ]
+          },
+          {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: functionResult
+          }
+        ];
+        
+        // Call API again with the function result
+        const updatedOptions = {
+          ...options,
+          messages: updatedMessages
+        };
+        
+        return callOpenAI(updatedOptions, apiKey, functionCallbacks);
+      }
+      
+      return `The function ${functionName} was called with parameters: ${JSON.stringify(parameters)}, but no handler was provided.`;
+    }
+    
     return data.choices[0].message.content;
   } catch (error) {
     console.error("Erro ao chamar OpenAI:", error);
@@ -147,38 +212,8 @@ export async function streamOpenAI(
   }
 
   try {
-    // Prepare messages with training files if available
-    let messages = [...options.messages];
-    
-    // Add training files as context if they exist
-    if (options.trainingFiles && options.trainingFiles.length > 0) {
-      // Create a context message with all training files content
-      const trainingContent = options.trainingFiles.map(file => {
-        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
-      }).join("\n");
-      
-      // Insert the training content after the system message
-      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-      if (systemMessageIndex !== -1) {
-        // Append to existing system message
-        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
-      } else {
-        // Add as a new system message if no system message exists
-        messages.unshift({
-          role: "system",
-          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
-        });
-      }
-    }
-
-    // Add emotion detection directive if enabled
-    if (options.detectEmotion) {
-      // Use a direct system message instead of checking for last user message
-      messages.push({
-        role: "system",
-        content: "Por favor, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
-      });
-    }
+    // Prepare messages with training files and emotion detection
+    let messages = prepareMessages(options);
 
     const requestBody: any = {
       model: options.model || "gpt-4o-mini",
@@ -190,7 +225,15 @@ export async function streamOpenAI(
 
     // Only include functions if they exist and are not empty
     if (options.functions && options.functions.length > 0) {
-      requestBody.functions = options.functions;
+      requestBody.tools = options.functions.map(func => ({
+        type: "function",
+        function: {
+          name: func.name,
+          description: func.description,
+          parameters: func.parameters
+        }
+      }));
+      requestBody.tool_choice = "auto";
     }
 
     console.log("Enviando streaming para OpenAI API:", {
@@ -238,6 +281,10 @@ export async function streamOpenAI(
     const decoder = new TextDecoder("utf-8");
     let fullMessage = "";
     let buffer = "";
+    let isFunctionCall = false;
+    let functionName = "";
+    let functionArguments = "";
+    let toolCallId = "";
 
     console.log("Iniciando leitura do stream");
 
@@ -260,12 +307,78 @@ export async function streamOpenAI(
           
           if (data === "[DONE]") {
             console.log("Recebido [DONE] no stream");
+            
+            // Handle function call if we collected one
+            if (isFunctionCall && callbacks.onFunctionCall) {
+              try {
+                const parameters = JSON.parse(functionArguments);
+                const result = await callbacks.onFunctionCall(functionName, parameters);
+                
+                // Call API again with function result
+                const updatedMessages = [
+                  ...messages,
+                  {
+                    role: "assistant",
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: toolCallId,
+                        type: "function",
+                        function: {
+                          name: functionName,
+                          arguments: functionArguments
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    role: "tool",
+                    tool_call_id: toolCallId,
+                    content: result
+                  }
+                ];
+                
+                // Reset streaming with new messages including function result
+                const updatedOptions = {
+                  ...options,
+                  messages: updatedMessages
+                };
+                
+                await streamOpenAI(updatedOptions, apiKey, callbacks);
+              } catch (error) {
+                console.error("Erro ao executar função:", error);
+                callbacks.onError?.(error);
+              }
+            } else if (callbacks.onComplete) {
+              callbacks.onComplete(fullMessage);
+            }
             continue;
           }
           
           try {
             const json = JSON.parse(data);
-            if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
+            
+            // Check for function call
+            if (json.choices && json.choices[0].delta && json.choices[0].delta.tool_calls) {
+              const toolCall = json.choices[0].delta.tool_calls[0];
+              
+              if (toolCall.index === 0) {
+                isFunctionCall = true;
+                toolCallId = toolCall.id || ""; // Store tool call ID
+              }
+              
+              if (toolCall.function) {
+                if (toolCall.function.name) {
+                  functionName = toolCall.function.name;
+                }
+                
+                if (toolCall.function.arguments) {
+                  functionArguments += toolCall.function.arguments;
+                }
+              }
+            } 
+            // Regular content
+            else if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
               const content = json.choices[0].delta.content;
               fullMessage += content;
               callbacks.onMessage?.(content);
@@ -277,8 +390,10 @@ export async function streamOpenAI(
       }
     }
 
-    console.log("Stream completo, mensagem final:", fullMessage);
-    callbacks.onComplete?.(fullMessage);
+    // Make sure to complete if we reach here and haven't called onComplete yet
+    if (!isFunctionCall && callbacks.onComplete) {
+      callbacks.onComplete(fullMessage);
+    }
   } catch (error) {
     console.error("Erro ao fazer streaming da OpenAI:", error);
     callbacks.onError?.(error);
@@ -358,5 +473,27 @@ export async function transcribeAudio(
   } catch (error) {
     console.error("Error transcribing audio:", error);
     throw error;
+  }
+}
+
+export async function callWebhook(url: string, params: any): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return JSON.stringify(result);
+  } catch (error) {
+    console.error('Error calling webhook:', error);
+    return JSON.stringify({ error: 'Failed to call webhook', message: error.message });
   }
 }
