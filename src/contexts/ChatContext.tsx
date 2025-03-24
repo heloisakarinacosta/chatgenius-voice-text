@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { getWidgetConfig, getAgentConfig, updateWidgetConfig, updateAgentConfig, getAdminConfig, updateAdminConfig, isConnected } from "@/services/databaseService";
 import { v4 as uuidv4 } from "uuid";
@@ -81,7 +80,6 @@ interface ChatContextType {
   setIsDbConnected: (connected: boolean) => void;
 }
 
-// Default context value
 const defaultContext: ChatContextType = {
   isWidgetOpen: false,
   setIsWidgetOpen: () => {},
@@ -130,13 +128,10 @@ const defaultContext: ChatContextType = {
   setIsDbConnected: () => {},
 };
 
-// Create the context
 const ChatContext = createContext<ChatContextType>(defaultContext);
 
-// Custom hook to access the context
 export const useChat = () => useContext(ChatContext);
 
-// Context provider
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const [isVoiceChatActive, setIsVoiceChatActive] = useState(false);
@@ -146,20 +141,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [adminConfig, setAdminConfig] = useState<AdminConfig>(defaultContext.adminConfig);
   const [isDbConnected, setIsDbConnected] = useState(isConnected());
 
-  // Load initial configuration
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        // Load widget configuration
         const widgetConfigData = await getWidgetConfig();
         if (widgetConfigData) {
           setWidgetConfig(widgetConfigData);
         }
 
-        // Load agent configuration
         const agentConfigData = await getAgentConfig();
         if (agentConfigData) {
-          // Ensure trainingFiles dates are Date objects
           if (agentConfigData.trainingFiles) {
             agentConfigData.trainingFiles = agentConfigData.trainingFiles.map((file) => ({
               ...file,
@@ -169,7 +160,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAgentConfig(agentConfigData);
         }
         
-        // Load admin configuration
         const adminConfigData = await getAdminConfig();
         if (adminConfigData) {
           setAdminConfig({
@@ -179,7 +169,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         }
         
-        // Set database connection status
         setIsDbConnected(isConnected());
       } catch (error) {
         console.error("Error loading configurations:", error);
@@ -189,7 +178,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadConfig();
   }, []);
 
-  // Add a message
   const addMessage = useCallback((content: string, role: "user" | "assistant" | "system"): string => {
     const id = uuidv4();
     const newMessage: Message = {
@@ -203,7 +191,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return id;
   }, []);
 
-  // Update an existing message
   const updateMessage = useCallback((id: string, content: string) => {
     setMessages((prevMessages) =>
       prevMessages.map((msg) =>
@@ -212,35 +199,29 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   }, []);
 
-  // Clear all messages
   const clearMessages = useCallback(() => {
     setMessages([]);
   }, []);
 
-  // Start a new conversation
   const startNewConversation = useCallback(() => {
     clearMessages();
   }, [clearMessages]);
 
-  // Update widget configuration
   const handleUpdateWidgetConfig = useCallback(async (config: WidgetConfig) => {
     setWidgetConfig(config);
     return await updateWidgetConfig(config);
   }, []);
 
-  // Update agent configuration
   const handleUpdateAgentConfig = useCallback(async (config: AgentConfig) => {
     setAgentConfig(config);
     return await updateAgentConfig(config);
   }, []);
 
-  // Update admin configuration
   const handleUpdateAdminConfig = useCallback(async (config: AdminConfig) => {
     setAdminConfig(config);
     return await updateAdminConfig(config);
   }, []);
 
-  // Add a training file
   const addTrainingFile = useCallback(async (file: File) => {
     try {
       const reader = new FileReader();
@@ -269,7 +250,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         trainingFiles: [...prev.trainingFiles, newFile],
       }));
       
-      // Save updated config
       await updateAgentConfig({
         ...agentConfig,
         trainingFiles: [...agentConfig.trainingFiles, newFile]
@@ -281,7 +261,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [agentConfig]);
 
-  // Remove a training file
   const removeTrainingFile = useCallback((id: string) => {
     setAgentConfig((prev) => {
       const updatedConfig = {
@@ -289,7 +268,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         trainingFiles: prev.trainingFiles.filter((file) => file.id !== id),
       };
       
-      // Save updated config
       updateAgentConfig(updatedConfig).catch(err => {
         console.error("Error saving agent config after removing file:", err);
       });
@@ -298,7 +276,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  // Context value
   const contextValue: ChatContextType = {
     isWidgetOpen,
     setIsWidgetOpen,
