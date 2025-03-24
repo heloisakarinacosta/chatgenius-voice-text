@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MessageCircle, Terminal, Settings, Code, FileText, AlertTriangle } from "lucide-react";
@@ -31,12 +30,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
   const [functions, setFunctions] = useState<AgentFunction[]>(agentConfig.functions);
   const [activeTab, setActiveTab] = useState("widget");
   
-  // Update functions when agentConfig changes
   useEffect(() => {
     setFunctions(agentConfig.functions);
   }, [agentConfig.functions]);
   
-  // Save agent configuration with functions
   const saveAgentConfig = () => {
     const updatedConfig = {
       ...agentConfig,
@@ -89,7 +86,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           </TabsTrigger>
         </TabsList>
         
-        {/* Widget Configuration */}
         <TabsContent value="widget">
           <WidgetConfigTab 
             widgetConfig={widgetConfig} 
@@ -97,7 +93,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           />
         </TabsContent>
         
-        {/* Agent Configuration */}
         <TabsContent value="agent">
           <AgentConfigTab 
             agentConfig={agentConfig} 
@@ -106,7 +101,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           />
         </TabsContent>
         
-        {/* Functions Configuration */}
         <TabsContent value="functions">
           <FunctionsTab 
             functions={functions} 
@@ -115,7 +109,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           />
         </TabsContent>
         
-        {/* Training Files */}
         <TabsContent value="files">
           <TrainingFilesTab 
             trainingFiles={agentConfig.trainingFiles}
@@ -124,7 +117,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           />
         </TabsContent>
         
-        {/* Settings */}
         <TabsContent value="settings">
           <SettingsTab 
             adminConfig={adminConfig} 

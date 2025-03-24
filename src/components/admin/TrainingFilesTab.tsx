@@ -35,13 +35,15 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       // Process only text files
       const file = files[0];
       
-      // Check if file is a text file
+      // Check if file is a text file or docx
       if (!file.type.startsWith("text/") && 
           !file.name.endsWith(".txt") && 
           !file.name.endsWith(".md") &&
           !file.name.endsWith(".csv") &&
-          !file.name.endsWith(".json")) {
-        toast.error("Por favor, envie apenas arquivos de texto (.txt, .md, .csv, .json)");
+          !file.name.endsWith(".json") &&
+          !file.name.endsWith(".docx") &&
+          !file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        toast.error("Por favor, envie apenas arquivos de texto (.txt, .md, .csv, .json, .docx)");
         return;
       }
       
@@ -84,6 +86,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     if (fileName.endsWith(".json")) return "JSON";
     if (fileName.endsWith(".csv")) return "CSV";
     if (fileName.endsWith(".md")) return "MD";
+    if (fileName.endsWith(".docx")) return "DOCX";
     return "TXT";
   };
 
@@ -103,7 +106,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               ref={fileInputRef}
               id="fileUpload"
               type="file"
-              accept=".txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+              accept=".txt,.md,.csv,.json,.docx,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={handleFileChange}
               className="hidden"
             />
@@ -116,7 +119,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               <FileUp className="h-6 w-6 text-muted-foreground" />
               <span>{isUploading ? "Carregando..." : "Clique para selecionar um arquivo"}</span>
               <span className="text-xs text-muted-foreground">
-                Suporta arquivos .txt, .md, .csv, .json (Max: 1MB)
+                Suporta arquivos .txt, .md, .csv, .json, .docx (Max: 1MB)
               </span>
             </Button>
           </div>
