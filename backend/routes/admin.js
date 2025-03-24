@@ -57,10 +57,12 @@ router.get('/', async (req, res) => {
       return res.json(defaultConfig);
     }
     
+    console.log('Fetching admin config from database');
     const [rows] = await pool.query('SELECT * FROM admin_config WHERE id = 1');
     
     if (rows.length === 0) {
       // Insert default config if not exists
+      console.log('No admin config found in database, creating default');
       const defaultConfig = {
         username: "admin",
         password_hash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
@@ -72,6 +74,7 @@ router.get('/', async (req, res) => {
         [defaultConfig.username, defaultConfig.password_hash, defaultConfig.api_key]
       );
       
+      console.log('Created default admin config in database');
       return res.json({
         username: defaultConfig.username,
         passwordHash: defaultConfig.password_hash,
@@ -79,6 +82,7 @@ router.get('/', async (req, res) => {
       });
     }
     
+    console.log('Found existing admin config in database');
     const config = rows[0];
     res.json({
       username: config.username,
@@ -87,7 +91,7 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching admin config:', error);
-    res.status(500).json({ error: 'Failed to fetch admin configuration' });
+    res.status(500).json({ error: 'Failed to fetch admin configuration', details: error.message });
   }
 });
 
@@ -96,6 +100,10 @@ router.put('/', async (req, res) => {
   try {
     const { username, passwordHash, apiKey } = req.body;
     console.log('Updating admin config:', { username, passwordHash, apiKey: apiKey ? 'REDACTED' : '' });
+    
+    if (!username || !passwordHash) {
+      return res.status(400).json({ error: 'Username and password hash are required' });
+    }
     
     const pool = db.getDbConnection();
     if (!pool) {
@@ -116,10 +124,11 @@ router.put('/', async (req, res) => {
         return res.json({ success: true, message: 'Admin configuration saved to file successfully' });
       } catch (fileError) {
         console.error('Error writing to config file:', fileError);
-        return res.status(500).json({ error: 'Failed to save admin configuration to file' });
+        return res.status(500).json({ error: 'Failed to save admin configuration to file', details: fileError.message });
       }
     }
     
+    console.log('Saving admin config to database');
     await pool.query(
       'UPDATE admin_config SET username = ?, password_hash = ?, api_key = ? WHERE id = 1',
       [username, passwordHash, apiKey]
@@ -129,13 +138,14 @@ router.put('/', async (req, res) => {
     res.json({ success: true, message: 'Admin configuration updated successfully' });
   } catch (error) {
     console.error('Error updating admin config:', error);
-    res.status(500).json({ error: 'Failed to update admin configuration' });
+    res.status(500).json({ error: 'Failed to update admin configuration', details: error.message });
   }
 });
 
 // Get OpenAI API Key for the widget
 router.get('/api-key', async (req, res) => {
   try {
+    console.log('Request received for API key');
     const pool = db.getDbConnection();
     if (!pool) {
       // Se não houver conexão com o banco de dados, busque do arquivo local
@@ -157,7 +167,7 @@ router.get('/api-key', async (req, res) => {
         return res.status(404).json({ error: 'API key not configured' });
       } catch (fileError) {
         console.error('Error reading from local file:', fileError);
-        return res.status(404).json({ error: 'API key not configured' });
+        return res.status(404).json({ error: 'API key not configured', details: fileError.message });
       }
     }
     
@@ -174,7 +184,7 @@ router.get('/api-key', async (req, res) => {
     res.json({ apiKey: rows[0].api_key });
   } catch (error) {
     console.error('Error fetching API key:', error);
-    res.status(500).json({ error: 'Failed to fetch API key' });
+    res.status(500).json({ error: 'Failed to fetch API key', details: error.message });
   }
 });
 

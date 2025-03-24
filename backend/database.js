@@ -6,6 +6,7 @@ const path = require('path');
 // Database connection configuration
 let pool = null;
 let isDbConnected = false;
+let lastConnectionError = null;
 
 // Ensure data directory exists
 const ensureDataDirectory = () => {
@@ -56,18 +57,23 @@ const initDatabase = async () => {
     await createTables();
     
     isDbConnected = true;
+    lastConnectionError = null;
     return true;
   } catch (error) {
     console.error('Database connection error:', error);
+    lastConnectionError = error;
     
     // More detailed error logging depending on error type
     if (error.code === 'ER_ACCESS_DENIED_ERROR') {
       console.error('ACCESS DENIED: Check your username and password');
+      console.error('Make sure to update the .env file with correct credentials');
     } else if (error.code === 'ER_BAD_DB_ERROR') {
       console.error('DATABASE NOT FOUND: The specified database does not exist');
       console.error('Create the database with: CREATE DATABASE chat_assistant;');
+      console.error('Or configure a different database name in .env file');
     } else if (error.code === 'ECONNREFUSED') {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
+      console.error('Check if the server is running and accessible at the configured host and port');
     }
     
     console.log('Using file-based fallback data storage');
@@ -191,8 +197,21 @@ const isConnected = () => {
   return isDbConnected;
 };
 
+// Get last connection error
+const getLastConnectionError = () => {
+  return lastConnectionError;
+};
+
+// Attempt to reconnect to the database
+const reconnect = async () => {
+  console.log('Attempting to reconnect to the database...');
+  return await initDatabase();
+};
+
 module.exports = {
   initDatabase,
   getDbConnection,
-  isConnected
+  isConnected,
+  getLastConnectionError,
+  reconnect
 };

@@ -1,224 +1,178 @@
 
 import React, { useState, useEffect } from "react";
-import { useChat } from "@/contexts/ChatContext";
-import AdminPanel from "@/components/AdminPanel";
+import { useNavigate } from "react-router-dom";
+import { SHA256 } from "crypto-js";
 import LoginForm from "@/components/LoginForm";
-import { useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, BookOpen, Terminal, Database } from "lucide-react";
+import AdminPanel from "@/components/AdminPanel";
+import { useChat } from "@/contexts/ChatContext";
+import { AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { initDatabase } from "@/services/databaseService";
+import { toast } from "sonner";
+import { initDatabase, isConnected, getAdminConfig } from "@/services/databaseService";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [apiKey, setApiKey] = useState("");
-  const [backendError, setBackendError] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const { adminConfig, updateAdminConfig, isDbConnected, setIsDbConnected } = useChat();
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [dbConnectionStatus, setDbConnectionStatus] = useState<boolean | null>(null);
+  const { adminConfig, loadData } = useChat();
+  const navigate = useNavigate();
 
-  // Inicializar conexão com o banco de dados
+  // Inicialize o banco de dados e verifique a conexão
   useEffect(() => {
-    const connectToDb = async () => {
+    const checkConnection = async () => {
       try {
-        console.log("Attempting to initialize database connection...");
-        setIsConnecting(true);
-        const connected = await initDatabase();
-        console.log("Database connection result:", connected);
-        setIsDbConnected(connected);
+        console.log('Checking database connection...');
+        const isDbConnected = await initDatabase();
+        console.log('Database connection status:', isDbConnected);
+        setDbConnectionStatus(isDbConnected);
+        
+        // Carregue os dados após inicializar o banco de dados
+        await loadData();
+        
+        // Tente buscar a API key do config
+        const config = await getAdminConfig();
+        if (config && config.apiKey) {
+          console.log('Found API key in admin config');
+          setApiKey(config.apiKey);
+        } else {
+          console.log('No API key found in admin config');
+        }
+        
+        setIsLoading(false);
       } catch (error) {
-        console.error("Error initializing database:", error);
-        setIsDbConnected(false);
-      } finally {
-        setIsConnecting(false);
+        console.error('Error checking connection:', error);
+        setDbConnectionStatus(false);
+        setIsLoading(false);
       }
     };
     
-    connectToDb();
-  }, [setIsDbConnected]);
+    checkConnection();
+  }, [loadData]);
 
-  // Get API key from backend/local storage
-  const { data: adminData, isLoading, error } = useQuery({
-    queryKey: ['adminConfig'],
-    queryFn: async () => {
-      try {
-        console.log('Fetching admin config from backend...');
-        const response = await fetch('http://localhost:3001/api/admin');
-        
-        if (!response.ok) {
-          console.error('Failed to fetch admin data:', response.status, response.statusText);
-          throw new Error(`Failed to fetch admin data: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('Admin config fetched successfully:', data);
-        return data;
-      } catch (error) {
-        console.error('Error fetching admin config:', error);
-        
-        // Check if error is due to backend server not running
-        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-          setBackendError(true);
-          toast.error("Backend server não está rodando", {
-            description: "Configure a API Key diretamente no app",
-            duration: 10000,
-          });
-        }
-        
-        console.log('Using cached admin config from context:', adminConfig);
-        return adminConfig; // Use cached data from context if available
-      }
-    },
-    retry: 1, // Only retry once
-    enabled: true // Always run query
-  });
-
-  useEffect(() => {
-    if (adminData && adminData.apiKey !== undefined) {
-      console.log('Setting API key from adminData');
-      setApiKey(adminData.apiKey);
-    } else if (adminConfig && adminConfig.apiKey !== undefined) {
-      console.log('Setting API key from adminConfig');
-      setApiKey(adminConfig.apiKey);
+  const handleLogin = (username: string, password: string) => {
+    if (!adminConfig) {
+      toast.error("Erro ao carregar configurações de admin");
+      return;
     }
-  }, [adminData, adminConfig]);
 
-  const handleSetApiKey = async (key: string) => {
-    try {
-      console.log('Saving API key...');
-      setApiKey(key);
+    const passwordHash = SHA256(password).toString();
+    
+    if (passwordHash === adminConfig.passwordHash) {
+      setIsAuthenticated(true);
+      setLoginAttempts(0);
+      toast.success("Login bem-sucedido!");
+    } else {
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
       
-      // Update admin config with new API key
-      const updatedConfig = {
-        ...adminConfig,
-        apiKey: key
-      };
-      
-      console.log('Updating admin config with new API key');
-      const success = await updateAdminConfig(updatedConfig);
-      
-      if (!success) {
-        throw new Error('Failed to update API key');
-      }
-      
-      toast.success("API key configurada com sucesso");
-    } catch (error) {
-      console.error('Error updating API key:', error);
-      toast.error("Falha ao salvar API key", {
-        description: "Tente novamente ou verifique sua conexão."
-      });
-    }
-  };
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-  };
-
-  const handleRetryConnection = async () => {
-    try {
-      setIsConnecting(true);
-      const connected = await initDatabase();
-      setIsDbConnected(connected);
-      
-      if (connected) {
-        toast.success("Conexão com o banco de dados estabelecida com sucesso!");
+      if (newAttempts >= 3) {
+        toast.error("Muitas tentativas de login. Redirecionando para a página inicial...");
+        setTimeout(() => navigate("/"), 2000);
       } else {
-        toast.error("Não foi possível conectar ao banco de dados");
+        toast.error("Nome de usuário ou senha incorretos");
       }
-    } catch (error) {
-      console.error("Error during connection retry:", error);
-      toast.error("Erro ao tentar reconectar");
-    } finally {
-      setIsConnecting(false);
     }
+  };
+
+  const handleApiKeySave = (key: string) => {
+    setApiKey(key);
   };
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="mb-2">Carregando configurações...</p>
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {backendError && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Erro de Conexão</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <p>
-              O servidor backend não está rodando ou não está acessível na porta 3001. 
-              Você pode continuar usando o aplicativo em modo offline, 
-              mas os dados serão armazenados apenas localmente.
-            </p>
-            <div className="mt-2">
-              <p className="font-semibold">Para iniciar o servidor backend:</p>
-              <ol className="list-decimal pl-5 space-y-1 mt-1">
-                <li>Abra um terminal na pasta do projeto</li>
-                <li>Navegue até a pasta backend: <code className="bg-gray-100 px-1">cd backend</code></li>
-                <li>Instale as dependências: <code className="bg-gray-100 px-1">npm install</code></li>
-                <li>Inicie o servidor: <code className="bg-gray-100 px-1">node server.js</code></li>
-              </ol>
-            </div>
-            <div className="flex gap-2 mt-2">
-              <Button 
-                variant="outline" 
-                className="self-start" 
-                onClick={() => window.open('/backend/README.md', '_blank')}
-              >
-                <BookOpen className="h-4 w-4 mr-2" />
-                Ver Documentação do Backend
-              </Button>
-              <Button
-                variant="default"
-                className="self-start"
-                onClick={handleRetryConnection}
-                disabled={isConnecting}
-              >
-                <Terminal className="h-4 w-4 mr-2" />
-                {isConnecting ? "Reconectando..." : "Tentar Reconectar"}
-              </Button>
+      {dbConnectionStatus === false && (
+        <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <div className="flex flex-col gap-2">
+              <p>
+                Não foi possível conectar ao servidor de banco de dados. 
+                O aplicativo está usando armazenamento local como fallback.
+              </p>
+              <div className="flex gap-2 mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => window.open('http://localhost:3001/api/health', '_blank')}
+                >
+                  Verificar API
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={() => window.location.reload()}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
             </div>
           </AlertDescription>
         </Alert>
       )}
       
-      {!backendError && !isDbConnected && (
-        <Alert variant="warning" className="mb-6 bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800">
-          <Database className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-700">Usando Armazenamento Local</AlertTitle>
-          <AlertDescription className="text-yellow-600 flex flex-col gap-2">
-            <p>
-              O aplicativo está conectado ao backend, mas o banco de dados MariaDB não está configurado corretamente.
-              Os dados estão sendo armazenados localmente.
-            </p>
-            <div className="mt-2">
-              <p className="font-semibold">Verificações sugeridas:</p>
-              <ol className="list-decimal pl-5 space-y-1 mt-1">
-                <li>Verifique se o MySQL/MariaDB está instalado e rodando</li>
-                <li>Verifique se as credenciais do banco no arquivo <code className="bg-gray-100 px-1">.env</code> estão corretas</li>
-                <li>Verifique se o banco de dados <code className="bg-gray-100 px-1">chat_assistant</code> existe</li>
-              </ol>
+      {/* Detectar API Backend rodando mas sem conexão com banco de dados */}
+      {dbConnectionStatus !== null && !isConnected() && dbConnectionStatus !== false && (
+        <Alert className="max-w-4xl mx-auto mt-4 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-600">
+            <div className="flex flex-col gap-2">
+              <p>
+                A API está rodando, mas sem conexão com o banco de dados MariaDB.
+                Verifique se o banco de dados está ativo e as credenciais estão corretas.
+              </p>
+              <div className="flex gap-2 mt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => window.open('backend/.env.example', '_blank')}
+                >
+                  Ver Configuração
+                </Button>
+              </div>
             </div>
-            <Button
-              variant="outline"
-              className="self-start mt-2"
-              onClick={handleRetryConnection}
-              disabled={isConnecting}
-            >
-              <Database className="h-4 w-4 mr-2" />
-              {isConnecting ? "Verificando conexão..." : "Verificar Conexão com o Banco"}
-            </Button>
           </AlertDescription>
         </Alert>
       )}
-      
-      {isAuthenticated ? (
-        <AdminPanel
-          apiKey={apiKey}
-          setApiKey={handleSetApiKey}
-          isAuthenticated={isAuthenticated}
-        />
+
+      {!isAuthenticated ? (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md w-full">
+            <h1 className="text-2xl font-bold mb-6 text-center">Admin Login</h1>
+            <LoginForm onLogin={handleLogin} />
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              <p>Login padrão: admin / admin</p>
+              <p className="mt-1">
+                <Button 
+                  variant="link" 
+                  className="p-0 h-auto text-sm" 
+                  onClick={() => navigate("/")}
+                >
+                  Voltar para o chat
+                </Button>
+              </p>
+            </div>
+          </div>
+        </div>
       ) : (
-        <LoginForm onLogin={handleLogin} />
+        <AdminPanel 
+          apiKey={apiKey} 
+          setApiKey={handleApiKeySave} 
+          isAuthenticated={isAuthenticated} 
+        />
       )}
     </div>
   );

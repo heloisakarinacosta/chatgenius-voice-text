@@ -3,8 +3,9 @@ import React, { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Check, Save } from "lucide-react";
+import { Check, Save, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useChat } from "@/contexts/ChatContext";
 
 interface ApiKeySectionProps {
   apiKey: string;
@@ -15,6 +16,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
   const [keyInput, setKeyInput] = useState(apiKey);
   const [isSaved, setIsSaved] = useState(Boolean(apiKey));
   const [isSaving, setIsSaving] = useState(false);
+  const { updateAdminConfig, adminConfig, isDbConnected } = useChat();
 
   // Sincronizar o estado local quando a prop apiKey mudar
   useEffect(() => {
@@ -30,10 +32,25 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
 
     try {
       setIsSaving(true);
-      // Atualizar a chave através da função fornecida pelo componente pai
-      setApiKey(keyInput.trim());
-      toast.success("Chave API salva com sucesso");
-      setIsSaved(true);
+      console.log('Attempting to save API key...');
+      
+      // Atualizar no contexto e no banco de dados/localStorage
+      const updatedConfig = {
+        ...adminConfig,
+        apiKey: keyInput.trim()
+      };
+      
+      const success = await updateAdminConfig(updatedConfig);
+      
+      if (success) {
+        // Atualizar a chave através da função fornecida pelo componente pai
+        setApiKey(keyInput.trim());
+        toast.success("Chave API salva com sucesso");
+        setIsSaved(true);
+        console.log('API key saved successfully');
+      } else {
+        throw new Error('Falha ao salvar a chave API');
+      }
     } catch (error) {
       console.error("Erro ao salvar a chave API:", error);
       toast.error("Erro ao salvar a chave API", {
@@ -80,9 +97,16 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
           )}
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground mt-1">
-        A chave API é armazenada no servidor e usada apenas para comunicações com a OpenAI.
-      </p>
+      <div className="flex items-center mt-1">
+        <p className="text-sm text-muted-foreground">
+          {isDbConnected 
+            ? "A chave API é armazenada no servidor e usada apenas para comunicações com a OpenAI."
+            : "A chave API é armazenada localmente no seu navegador."}
+        </p>
+        {!isDbConnected && (
+          <AlertCircle size={14} className="text-yellow-500 ml-1" />
+        )}
+      </div>
     </div>
   );
 };
