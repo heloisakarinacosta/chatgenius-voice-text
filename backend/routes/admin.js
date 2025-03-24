@@ -72,9 +72,28 @@ router.get('/api-key', async (req, res) => {
   try {
     const pool = db.getDbConnection();
     if (!pool) {
-      return res.status(503).json({ error: 'Database not connected' });
+      // Se não houver conexão com o banco de dados, busque do localStorage
+      const fs = require('fs');
+      const path = require('path');
+      
+      try {
+        // Tentativa de buscar de um arquivo local de backup
+        const configPath = path.join(__dirname, '../data/config.json');
+        if (fs.existsSync(configPath)) {
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          if (config.apiKey) {
+            return res.json({ apiKey: config.apiKey });
+          }
+        }
+        // Se não encontrar arquivo local ou não tiver API key, retorne 404
+        return res.status(404).json({ error: 'API key not configured' });
+      } catch (fileError) {
+        console.error('Error reading from local file:', fileError);
+        return res.status(404).json({ error: 'API key not configured' });
+      }
     }
     
+    // Se tiver conexão com banco de dados, busque de lá
     const [rows] = await pool.query('SELECT api_key FROM admin_config WHERE id = 1');
     
     if (rows.length === 0 || !rows[0].api_key) {

@@ -6,23 +6,28 @@ import ChatWidget from "@/components/ChatWidget";
 
 const Index = () => {
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const { adminConfig } = useChat();
 
   // Fetch API key from backend
   const { data: apiKeyData, isLoading: isApiKeyLoading } = useQuery({
     queryKey: ['apiKey'],
     queryFn: async () => {
       try {
+        // Primeiro tentamos buscar do backend
         const response = await fetch('http://localhost:3001/api/admin/api-key');
         if (!response.ok) {
           if (response.status === 404) {
-            return { apiKey: null };
+            console.log('API key not found on server, using from context');
+            // Se não encontrar no backend, use o valor do contexto
+            return { apiKey: adminConfig?.apiKey || null };
           }
           throw new Error('Failed to fetch API key');
         }
         return response.json();
       } catch (error) {
         console.error('Error fetching API key:', error);
-        return { apiKey: null };
+        // Em caso de erro, use o valor do contexto
+        return { apiKey: adminConfig?.apiKey || null };
       }
     }
   });
