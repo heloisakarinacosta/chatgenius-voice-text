@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useChat } from "@/contexts/ChatContext";
 import ChatWidget from "@/components/ChatWidget";
@@ -21,44 +21,55 @@ const Index = () => {
   const [backendError, setBackendError] = useState(false);
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const [tempApiKey, setTempApiKey] = useState("");
+  const [apiCheckInProgress, setApiCheckInProgress] = useState(false);
 
-  // Fetch API key from backend
-  const { data: apiKeyData, isLoading: isApiKeyLoading, error: apiKeyError } = useQuery({
-    queryKey: ['apiKey'],
-    queryFn: async () => {
-      try {
-        // First try to fetch from backend
-        console.log("Attempting to fetch API key from backend...");
-        // Add cache busting to prevent browser caching
-        const cacheBuster = new Date().getTime();
-        const response = await fetch(`http://localhost:3001/api/admin/api-key?_=${cacheBuster}`, {
-          headers: { 
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          },
-          cache: 'no-store'
-        });
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            console.log('API key not found on server, using from context');
-            // If not found on backend, use the value from context
-            return { apiKey: adminConfig?.apiKey || null };
-          }
-          throw new Error(`Failed to fetch API key: ${response.status}`);
+  // Function to fetch API key with retry limits and backoff
+  const fetchApiKey = useCallback(async () => {
+    if (apiCheckInProgress) return { apiKey: adminConfig?.apiKey || null };
+    
+    try {
+      setApiCheckInProgress(true);
+      console.log("Attempting to fetch API key from backend...");
+      // Add cache busting to prevent browser caching
+      const cacheBuster = new Date().getTime();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 3000)
+      );
+      
+      const fetchPromise = fetch(`http://localhost:3001/api/admin/api-key?_=${cacheBuster}`, {
+        headers: { 
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        cache: 'no-store'
+      });
+      
+      // Race between fetch and timeout
+      const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('API key not found on server, using from context');
+          return { apiKey: adminConfig?.apiKey || null };
         }
+        throw new Error(`Failed to fetch API key: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("Successfully retrieved API key from backend");
+      return data;
+    } catch (error) {
+      console.error('Error fetching API key:', error);
+      console.log("Falling back to context API key:", adminConfig?.apiKey ? "exists" : "not set");
+      
+      // Check if error is due to backend server not running
+      if (error instanceof TypeError && error.message.includes('Failed to fetch') ||
+          error.message === 'Request timeout') {
+        setBackendError(true);
         
-        const data = await response.json();
-        console.log("Successfully retrieved API key from backend");
-        return data;
-      } catch (error) {
-        console.error('Error fetching API key:', error);
-        console.log("Falling back to context API key:", adminConfig?.apiKey ? "exists" : "not set");
-        
-        // Check if error is due to backend server not running
-        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-          setBackendError(true);
+        // Only show toast once
+        if (!backendError) {
           toast.error("Backend server is not running", {
             description: "Configure the API Key directly in the app",
             duration: 10000,
@@ -69,12 +80,24 @@ const Index = () => {
             setShowSetupDialog(true);
           }
         }
-        
-        // In case of error, use the value from context
-        return { apiKey: adminConfig?.apiKey || null };
       }
-    },
+      
+      // In case of error, use the value from context
+      return { apiKey: adminConfig?.apiKey || null };
+    } finally {
+      setApiCheckInProgress(false);
+    }
+  }, [adminConfig, backendError, apiCheckInProgress]);
+
+  // Fetch API key from backend, with reduced stale time and cache time
+  const { data: apiKeyData, isLoading: isApiKeyLoading, error: apiKeyError } = useQuery({
+    queryKey: ['apiKey'],
+    queryFn: fetchApiKey,
     retry: 1, // Only retry once to avoid too many failed requests
+    staleTime: 30000, // Consider data stale after 30 seconds
+    cacheTime: 60000, // Cache for 1 minute only
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
+    refetchOnMount: false, // Don't refetch when component mounts
   });
 
   useEffect(() => {

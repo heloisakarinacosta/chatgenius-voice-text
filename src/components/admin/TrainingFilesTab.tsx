@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from "react";
 import { Card, CardHeader, CardContent, CardDescription, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [openFileId, setOpenFileId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,6 +32,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadError(null);
     
     try {
       // Process only text files
@@ -44,12 +47,14 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
           !file.name.endsWith(".csv") &&
           !file.name.endsWith(".json") &&
           !isDocx) {
+        setUploadError("Por favor, envie apenas arquivos de texto (.txt, .md, .csv, .json, .docx)");
         toast.error("Por favor, envie apenas arquivos de texto (.txt, .md, .csv, .json, .docx)");
         return;
       }
       
       // Check file size (max 1MB)
       if (file.size > 1024 * 1024) {
+        setUploadError("O arquivo é muito grande. O tamanho máximo é de 1MB");
         toast.error("O arquivo é muito grande. O tamanho máximo é de 1MB");
         return;
       }
@@ -67,11 +72,13 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         timestamp: new Date()
       };
       
+      console.log("Attempting to add training file:", file.name);
       const success = await addTrainingFile(trainingFile);
       
       if (success) {
         toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
       } else {
+        setUploadError(`Erro ao adicionar arquivo "${file.name}"`);
         toast.error(`Erro ao adicionar arquivo "${file.name}"`);
       }
       
@@ -81,6 +88,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       }
     } catch (error) {
       console.error("Error uploading file:", error);
+      setUploadError(`Erro ao fazer upload do arquivo: ${error.message}`);
       toast.error("Erro ao fazer upload do arquivo");
     } finally {
       setIsUploading(false);
@@ -103,11 +111,13 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
   };
 
   const handleUploadClick = () => {
+    setUploadError(null);
     fileInputRef.current?.click();
   };
 
   const handleRemoveFile = async (id: string, name: string) => {
     try {
+      console.log("Attempting to remove file:", id, name);
       const success = await removeTrainingFile(id);
       if (success) {
         toast.success(`Arquivo "${name}" removido com sucesso`);
@@ -159,13 +169,29 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               className="w-full border-dashed border-2 p-8 flex flex-col items-center justify-center gap-2"
               disabled={isUploading}
             >
-              <FileUp className="h-6 w-6 text-muted-foreground" />
-              <span>{isUploading ? "Carregando..." : "Clique para selecionar um arquivo"}</span>
+              {isUploading ? (
+                <div className="flex flex-col items-center">
+                  <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mb-2"></div>
+                  <span>Carregando...</span>
+                </div>
+              ) : (
+                <>
+                  <FileUp className="h-6 w-6 text-muted-foreground" />
+                  <span>Clique para selecionar um arquivo</span>
+                </>
+              )}
               <span className="text-xs text-muted-foreground">
                 Suporta arquivos .txt, .md, .csv, .json, .docx (Max: 1MB)
               </span>
             </Button>
           </div>
+          
+          {uploadError && (
+            <div className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 p-3 rounded-md mt-2 text-sm flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+              <div>{uploadError}</div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">

@@ -1,18 +1,48 @@
 
+// Only modifying a section of the file to implement request timeout and prevent excessive retries
+
 import * as localDb from './localStorageDb';
 
 // Base URL for the API
 const API_BASE_URL = 'http://localhost:3001/api';
 
+// Configuration for fetch requests
+const FETCH_TIMEOUT = 3000; // 3 seconds timeout
+const MAX_RETRIES = 1;
+
 // This file serves as a facade over actual database implementations
 // It will use either the API connection (to the backend) or localStorage as a fallback
 let isDbConnected = false;
+let connectionAttempted = false;
+
+// Helper function to create a fetch request with timeout
+const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
+  const controller = new AbortController();
+  const { signal } = controller;
+  
+  // Create a timeout that will abort the fetch
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  
+  try {
+    const response = await fetch(url, { ...options, signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+};
 
 // Initialize database connection - this will try to connect to the backend API
 export const initDatabase = async () => {
+  if (connectionAttempted) {
+    return isDbConnected;
+  }
+
   try {
+    connectionAttempted = true;
     console.log('Attempting to connect to backend API at:', API_BASE_URL);
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
       headers: { 'Cache-Control': 'no-cache' },
       cache: 'no-store'
     });
@@ -41,7 +71,7 @@ export const initDatabase = async () => {
 export const getWidgetConfig = async () => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/widget`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/widget`, {
         headers: { 'Cache-Control': 'no-cache' },
         cache: 'no-store'
       });
@@ -252,12 +282,20 @@ export const addMessage = async (conversationId: string, message: any) => {
 export const addTrainingFile = async (file: any) => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/training`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/training`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(file)
       });
-      return response.ok;
+      
+      if (!response.ok) {
+        // Try to get more detailed error information
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Server error when adding training file:', errorData);
+        throw new Error(errorData.error || `Failed to add training file: ${response.status}`);
+      }
+      
+      return true;
     } catch (error) {
       console.error('Error adding training file via API:', error);
       return localDb.addTrainingFile(file);
@@ -269,10 +307,17 @@ export const addTrainingFile = async (file: any) => {
 export const removeTrainingFile = async (id: string) => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/training/${id}`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/training/${id}`, {
         method: 'DELETE'
       });
-      return response.ok;
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Server error when removing training file:', errorData);
+        throw new Error(errorData.error || `Failed to remove training file: ${response.status}`);
+      }
+      
+      return true;
     } catch (error) {
       console.error('Error removing training file via API:', error);
       return localDb.removeTrainingFile(id);
@@ -284,7 +329,7 @@ export const removeTrainingFile = async (id: string) => {
 // Get database connection status
 export const getDbConnection = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
       headers: { 'Cache-Control': 'no-cache' },
       cache: 'no-store'
     });
