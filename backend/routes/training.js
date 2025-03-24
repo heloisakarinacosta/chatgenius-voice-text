@@ -36,13 +36,25 @@ router.post('/', async (req, res) => {
     // Log file details
     console.log(`Saving file: ${name}, Type: ${fileType}, Content length: ${fileContent.length}`);
     
-    // Use parameterized query to prevent SQL injection
-    await pool.query(
-      'INSERT INTO training_files (id, name, content, size, type, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, fileContent, size || 0, fileType, new Date()]
-    );
+    // Check if file with this ID already exists
+    const [existingFiles] = await pool.query('SELECT id FROM training_files WHERE id = ?', [id]);
     
-    console.log(`Training file ${name} added successfully with ID: ${id}`);
+    if (existingFiles && existingFiles.length > 0) {
+      // Update existing file
+      await pool.query(
+        'UPDATE training_files SET name = ?, content = ?, size = ?, type = ?, timestamp = ? WHERE id = ?',
+        [name, fileContent, size || 0, fileType, new Date(), id]
+      );
+      console.log(`Training file ${name} updated successfully with ID: ${id}`);
+    } else {
+      // Insert new file
+      await pool.query(
+        'INSERT INTO training_files (id, name, content, size, type, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, name, fileContent, size || 0, fileType, new Date()]
+      );
+      console.log(`Training file ${name} added successfully with ID: ${id}`);
+    }
+    
     res.json({
       success: true,
       message: 'Training file added successfully',
@@ -68,8 +80,19 @@ router.get('/', async (req, res) => {
     }
     
     const [rows] = await pool.query('SELECT * FROM training_files ORDER BY timestamp DESC');
-    console.log(`Retrieved ${rows.length} training files from database`);
-    res.json(rows);
+    
+    // Process the files to clean up any potential circular references
+    const cleanedRows = rows.map(file => ({
+      id: file.id,
+      name: file.name,
+      content: file.content,
+      size: file.size,
+      type: file.type,
+      timestamp: file.timestamp
+    }));
+    
+    console.log(`Retrieved ${cleanedRows.length} training files from database`);
+    res.json(cleanedRows);
   } catch (error) {
     console.error('Error getting training files:', error);
     res.status(500).json({ 

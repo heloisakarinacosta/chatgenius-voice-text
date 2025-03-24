@@ -1,3 +1,4 @@
+
 import * as localDb from './localStorageDb';
 
 // Base URL for the API
@@ -14,6 +15,7 @@ let isDbConnected = false;
 let connectionAttempted = false;
 let connectionRetryCount = 0;
 let lastConnectionAttempt = 0;
+let inProgressRequests = new Set();
 
 // Helper function to create a fetch request with timeout
 const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
@@ -93,16 +95,27 @@ export const initDatabase = async () => {
 
 // Widget configuration functions
 export const getWidgetConfig = async () => {
+  // Generate a unique request ID to prevent duplicate requests
+  const requestId = `widget-config-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate request prevented:', requestId);
+    return localDb.getWidgetConfig();
+  }
+  
   if (isDbConnected) {
     try {
+      inProgressRequests.add(requestId);
       const response = await fetchWithTimeout(`${API_BASE_URL}/widget`, {
         headers: { 'Cache-Control': 'no-cache' },
         cache: 'no-store'
       });
       if (!response.ok) throw new Error('Failed to fetch widget config');
-      return await response.json();
+      const result = await response.json();
+      inProgressRequests.delete(requestId);
+      return result;
     } catch (error) {
       console.error('Error fetching widget config from API:', error);
+      inProgressRequests.delete(requestId);
       return localDb.getWidgetConfig();
     }
   }
@@ -304,9 +317,17 @@ export const addMessage = async (conversationId: string, message: any) => {
 
 // Training file functions
 export const getTrainingFiles = async () => {
+  // Generate a unique request ID to prevent duplicate requests
+  const requestId = `training-files-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate training files request prevented');
+    return localDb.getTrainingFiles();
+  }
+  
   if (isDbConnected) {
     try {
       console.log('Fetching training files from API...');
+      inProgressRequests.add(requestId);
       const response = await fetchWithTimeout(`${API_BASE_URL}/training`, {
         headers: { 'Cache-Control': 'no-cache' },
         cache: 'no-store'
@@ -318,9 +339,11 @@ export const getTrainingFiles = async () => {
       
       const files = await response.json();
       console.log(`Retrieved ${files.length} training files from API`);
+      inProgressRequests.delete(requestId);
       return files;
     } catch (error) {
       console.error('Error fetching training files from API:', error);
+      inProgressRequests.delete(requestId);
       return localDb.getTrainingFiles();
     }
   }
@@ -328,9 +351,17 @@ export const getTrainingFiles = async () => {
 };
 
 export const addTrainingFile = async (file: any) => {
+  // Generate a unique request ID based on file name and timestamp
+  const requestId = `add-file-${file.name}-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate file upload request prevented');
+    return false;
+  }
+  
   if (isDbConnected) {
     try {
       console.log(`Sending training file ${file.name} to API...`);
+      inProgressRequests.add(requestId);
       const response = await fetchWithTimeout(`${API_BASE_URL}/training`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -341,14 +372,17 @@ export const addTrainingFile = async (file: any) => {
         // Try to get more detailed error information
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('Server error when adding training file:', errorData);
+        inProgressRequests.delete(requestId);
         throw new Error(errorData.error || `Failed to add training file: ${response.status}`);
       }
       
       const result = await response.json();
       console.log('Training file API response:', result);
+      inProgressRequests.delete(requestId);
       return true;
     } catch (error) {
       console.error('Error adding training file via API:', error);
+      inProgressRequests.delete(requestId);
       return localDb.addTrainingFile(file);
     }
   }
@@ -356,9 +390,17 @@ export const addTrainingFile = async (file: any) => {
 };
 
 export const removeTrainingFile = async (id: string) => {
+  // Generate a unique request ID
+  const requestId = `remove-file-${id}-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate file removal request prevented');
+    return false;
+  }
+  
   if (isDbConnected) {
     try {
       console.log(`Removing training file with ID ${id} via API...`);
+      inProgressRequests.add(requestId);
       const response = await fetchWithTimeout(`${API_BASE_URL}/training/${id}`, {
         method: 'DELETE'
       });
@@ -366,14 +408,17 @@ export const removeTrainingFile = async (id: string) => {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('Server error when removing training file:', errorData);
+        inProgressRequests.delete(requestId);
         throw new Error(errorData.error || `Failed to remove training file: ${response.status}`);
       }
       
       const result = await response.json();
       console.log('Training file removal API response:', result);
+      inProgressRequests.delete(requestId);
       return true;
     } catch (error) {
       console.error('Error removing training file via API:', error);
+      inProgressRequests.delete(requestId);
       return localDb.removeTrainingFile(id);
     }
   }
@@ -382,7 +427,15 @@ export const removeTrainingFile = async (id: string) => {
 
 // Get database connection status
 export const getDbConnection = async () => {
+  // Prevent duplicate concurrent requests
+  const requestId = `db-connection-${Date.now()}`;
+  if (inProgressRequests.has(requestId)) {
+    console.log('Duplicate DB connection check prevented');
+    return isDbConnected;
+  }
+  
   try {
+    inProgressRequests.add(requestId);
     const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
       headers: { 'Cache-Control': 'no-cache' },
       cache: 'no-store'
@@ -390,10 +443,12 @@ export const getDbConnection = async () => {
     if (!response.ok) throw new Error('API health check failed');
     const data = await response.json();
     isDbConnected = data.dbConnected;
+    inProgressRequests.delete(requestId);
     return data.dbConnected;
   } catch (error) {
     console.error('Error checking database connection:', error);
     isDbConnected = false;
+    inProgressRequests.delete(requestId);
     return null;
   }
 };
