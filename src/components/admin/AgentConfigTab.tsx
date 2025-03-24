@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw, Volume2 } from "lucide-react";
+import { RefreshCw, Volume2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { AgentConfig } from "@/contexts/ChatContext";
 
@@ -202,6 +202,18 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
             </div>
           </>
         )}
+
+        <div className="border-t pt-4 mt-4">
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-muted-foreground" />
+            <Label>Arquivos de Treinamento</Label>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            {updatedAgentConfig.trainingFiles.length > 0 
+              ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s). Acesse a aba "Arquivos" para gerenciar.`
+              : 'Nenhum arquivo carregado. Acesse a aba "Arquivos" para adicionar arquivos de treinamento.'}
+          </p>
+        </div>
       </CardContent>
       <CardFooter>
         <Button onClick={saveAgentConfig}>Save Changes</Button>

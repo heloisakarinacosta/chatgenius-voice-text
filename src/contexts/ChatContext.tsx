@@ -23,10 +23,20 @@ export interface VoiceConfig {
   latency: number;
 }
 
+export interface TrainingFile {
+  id: string;
+  name: string;
+  content: string;
+  size: number;
+  type: string;
+  timestamp: Date;
+}
+
 export interface AgentConfig {
   systemPrompt: string;
   functions: AgentFunction[];
   voice: VoiceConfig;
+  trainingFiles: TrainingFile[];
 }
 
 export interface AgentFunction {
@@ -66,6 +76,8 @@ interface ChatContextType {
   updateWidgetConfig: (config: Partial<WidgetConfig>) => void;
   updateAgentConfig: (config: Partial<AgentConfig>) => void;
   updateAdminConfig: (config: Partial<AdminConfig>) => void;
+  addTrainingFile: (file: File) => Promise<void>;
+  removeTrainingFile: (id: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -87,6 +99,7 @@ const defaultAgentConfig: AgentConfig = {
     language: "en-US",
     latency: 100,
   },
+  trainingFiles: [],
 };
 
 const defaultAdminConfig: AdminConfig = {
@@ -198,6 +211,49 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAdminConfig(prev => ({ ...prev, ...config }));
   }, []);
 
+  // Add a training file
+  const addTrainingFile = useCallback(async (file: File): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (event) => {
+        if (event.target && event.target.result) {
+          const newFile: TrainingFile = {
+            id: uuidv4(),
+            name: file.name,
+            content: event.target.result as string,
+            size: file.size,
+            type: file.type,
+            timestamp: new Date(),
+          };
+          
+          setAgentConfig(prev => ({
+            ...prev,
+            trainingFiles: [...prev.trainingFiles, newFile],
+          }));
+          
+          resolve();
+        } else {
+          reject(new Error("Failed to read file"));
+        }
+      };
+      
+      reader.onerror = () => {
+        reject(new Error("Error reading file"));
+      };
+      
+      reader.readAsText(file);
+    });
+  }, []);
+
+  // Remove a training file
+  const removeTrainingFile = useCallback((id: string) => {
+    setAgentConfig(prev => ({
+      ...prev,
+      trainingFiles: prev.trainingFiles.filter(file => file.id !== id),
+    }));
+  }, []);
+
   // Get messages for the current conversation
   const messages = currentConversationId 
     ? conversations.find(conv => conv.id === currentConversationId)?.messages || []
@@ -220,6 +276,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateWidgetConfig,
     updateAgentConfig,
     updateAdminConfig,
+    addTrainingFile,
+    removeTrainingFile,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

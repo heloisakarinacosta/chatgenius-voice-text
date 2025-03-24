@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageCircle, Terminal, Settings, Code } from "lucide-react";
+import { MessageCircle, Terminal, Settings, Code, FileText } from "lucide-react";
 import { AgentFunction, useChat } from "@/contexts/ChatContext";
 import ApiKeySection from "@/components/admin/ApiKeySection";
 import WidgetConfigTab from "@/components/admin/WidgetConfigTab";
 import AgentConfigTab from "@/components/admin/AgentConfigTab";
 import FunctionsTab from "@/components/admin/FunctionsTab";
 import SettingsTab from "@/components/admin/SettingsTab";
+import TrainingFilesTab from "@/components/admin/TrainingFilesTab";
 
 interface AdminPanelProps {
   apiKey: string;
@@ -16,7 +17,16 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthenticated }) => {
-  const { widgetConfig, agentConfig, adminConfig, updateWidgetConfig, updateAgentConfig, updateAdminConfig } = useChat();
+  const { 
+    widgetConfig, 
+    agentConfig, 
+    adminConfig, 
+    updateWidgetConfig, 
+    updateAgentConfig, 
+    updateAdminConfig,
+    addTrainingFile,
+    removeTrainingFile
+  } = useChat();
   const [functions, setFunctions] = useState<AgentFunction[]>(agentConfig.functions);
   
   // Update functions when agentConfig changes
@@ -41,7 +51,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
       <ApiKeySection apiKey={apiKey} setApiKey={setApiKey} />
       
       <Tabs defaultValue="widget" className="space-y-4">
-        <TabsList className="grid grid-cols-4">
+        <TabsList className="grid grid-cols-5">
           <TabsTrigger value="widget">
             <MessageCircle className="h-4 w-4 mr-2" />
             Widget
@@ -53,6 +63,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
           <TabsTrigger value="functions">
             <Code className="h-4 w-4 mr-2" />
             Functions
+          </TabsTrigger>
+          <TabsTrigger value="files">
+            <FileText className="h-4 w-4 mr-2" />
+            Arquivos
           </TabsTrigger>
           <TabsTrigger value="settings">
             <Settings className="h-4 w-4 mr-2" />
@@ -83,6 +97,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
             functions={functions} 
             setFunctions={setFunctions}
             saveAgentConfig={saveAgentConfig}
+          />
+        </TabsContent>
+        
+        {/* Training Files */}
+        <TabsContent value="files">
+          <TrainingFilesTab 
+            trainingFiles={agentConfig.trainingFiles}
+            addTrainingFile={addTrainingFile}
+            removeTrainingFile={removeTrainingFile}
           />
         </TabsContent>
         
