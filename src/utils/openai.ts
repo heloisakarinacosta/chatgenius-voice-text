@@ -66,7 +66,15 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
 
     // Add emotion detection directive if enabled
     if (options.detectEmotion) {
-      const lastUserMessage = messages.findLast(msg => msg.role === "user");
+      // Find the last user message using a traditional approach instead of findLast
+      let lastUserMessage = null;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "user") {
+          lastUserMessage = messages[i];
+          break;
+        }
+      }
+      
       if (lastUserMessage) {
         messages = [
           ...messages,
@@ -165,6 +173,7 @@ export async function streamOpenAI(
 
     // Add emotion detection directive if enabled
     if (options.detectEmotion) {
+      // Use a direct system message instead of checking for last user message
       messages.push({
         role: "system",
         content: "Por favor, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
