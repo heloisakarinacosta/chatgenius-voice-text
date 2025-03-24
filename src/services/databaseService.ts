@@ -324,6 +324,10 @@ export const getTrainingFiles = async () => {
     return localDb.getTrainingFiles();
   }
   
+  // Always get local files first
+  const localFiles = localDb.getTrainingFiles();
+  console.log(`Found ${localFiles.length} training files in localStorage`);
+  
   if (isDbConnected) {
     try {
       console.log('Fetching training files from API...');
@@ -337,25 +341,59 @@ export const getTrainingFiles = async () => {
         throw new Error(`Failed to fetch training files: ${response.status}`);
       }
       
-      const files = await response.json();
-      console.log(`Retrieved ${files.length} training files from API`);
+      const apiFiles = await response.json();
+      console.log(`Retrieved ${apiFiles.length} training files from API`);
       inProgressRequests.delete(requestId);
-      return files;
+      
+      // Merge API files with local files to ensure we don't lose any
+      // Convert API timestamp strings to Date objects
+      const processedApiFiles = apiFiles.map((file: any) => ({
+        ...file,
+        timestamp: new Date(file.timestamp)
+      }));
+      
+      // Create a map of file IDs for quick lookup
+      const fileMap = new Map();
+      
+      // First add all local files to the map
+      localFiles.forEach(file => {
+        fileMap.set(file.id, file);
+      });
+      
+      // Then add API files, overwriting local ones with the same ID
+      processedApiFiles.forEach(file => {
+        fileMap.set(file.id, file);
+      });
+      
+      // Convert map back to array
+      const mergedFiles = Array.from(fileMap.values());
+      console.log(`Returning ${mergedFiles.length} merged training files`);
+      
+      // Update local storage with the merged files
+      const config = localDb.getAgentConfig();
+      config.trainingFiles = mergedFiles;
+      localDb.updateAgentConfig(config);
+      
+      return mergedFiles;
     } catch (error) {
       console.error('Error fetching training files from API:', error);
       inProgressRequests.delete(requestId);
-      return localDb.getTrainingFiles();
+      return localFiles;
     }
   }
-  return localDb.getTrainingFiles();
+  return localFiles;
 };
 
 export const addTrainingFile = async (file: any) => {
+  // Always add to local storage first
+  localDb.addTrainingFile(file);
+  console.log(`Added training file ${file.name} to localStorage`);
+  
   // Generate a unique request ID based on file name and timestamp
   const requestId = `add-file-${file.name}-${Date.now()}`;
   if (inProgressRequests.has(requestId)) {
     console.log('Duplicate file upload request prevented');
-    return false;
+    return true;
   }
   
   if (isDbConnected) {
@@ -383,18 +421,23 @@ export const addTrainingFile = async (file: any) => {
     } catch (error) {
       console.error('Error adding training file via API:', error);
       inProgressRequests.delete(requestId);
-      return localDb.addTrainingFile(file);
+      // Already added to localStorage, so return true
+      return true;
     }
   }
-  return localDb.addTrainingFile(file);
+  return true;
 };
 
 export const removeTrainingFile = async (id: string) => {
+  // Always remove from local storage first
+  localDb.removeTrainingFile(id);
+  console.log(`Removed training file ${id} from localStorage`);
+  
   // Generate a unique request ID
   const requestId = `remove-file-${id}-${Date.now()}`;
   if (inProgressRequests.has(requestId)) {
     console.log('Duplicate file removal request prevented');
-    return false;
+    return true;
   }
   
   if (isDbConnected) {
@@ -419,10 +462,11 @@ export const removeTrainingFile = async (id: string) => {
     } catch (error) {
       console.error('Error removing training file via API:', error);
       inProgressRequests.delete(requestId);
-      return localDb.removeTrainingFile(id);
+      // Already removed from localStorage, so return true
+      return true;
     }
   }
-  return localDb.removeTrainingFile(id);
+  return true;
 };
 
 // Get database connection status

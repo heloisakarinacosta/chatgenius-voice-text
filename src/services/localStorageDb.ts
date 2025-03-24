@@ -1,3 +1,4 @@
+
 // Local storage fallback implementation for database operations
 
 export interface WidgetConfig {
@@ -220,6 +221,12 @@ export const addMessage = (conversationId: string, message: Message): boolean =>
     console.error("Error adding message:", error);
     return false;
   }
+};
+
+// Get training files from localStorage
+export const getTrainingFiles = () => {
+  const config = getAgentConfig();
+  return config.trainingFiles || [];
 };
 
 // Add a training file in localStorage
