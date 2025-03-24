@@ -25,6 +25,10 @@ export interface StreamCallbacks {
 }
 
 export async function callOpenAI(options: OpenAICompletionOptions, apiKey: string): Promise<string> {
+  if (!apiKey) {
+    throw new Error("API_KEY_MISSING");
+  }
+
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -43,7 +47,13 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error?.message || "Failed to call OpenAI API");
+      if (response.status === 429) {
+        throw new Error("API_QUOTA_EXCEEDED");
+      } else if (response.status === 401) {
+        throw new Error("API_KEY_INVALID");
+      } else {
+        throw new Error(error.error?.message || "Failed to call OpenAI API");
+      }
     }
 
     const data = await response.json();
@@ -59,6 +69,11 @@ export async function streamOpenAI(
   apiKey: string,
   callbacks: StreamCallbacks
 ): Promise<void> {
+  if (!apiKey) {
+    callbacks.onError?.(new Error("API_KEY_MISSING"));
+    return;
+  }
+
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -76,8 +91,21 @@ export async function streamOpenAI(
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || "Failed to call OpenAI API");
+      const errorText = await response.text();
+      let errorJson;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch (e) {
+        // Se não for JSON, apenas continua
+      }
+      
+      if (response.status === 429) {
+        throw new Error("API_QUOTA_EXCEEDED");
+      } else if (response.status === 401) {
+        throw new Error("API_KEY_INVALID");
+      } else {
+        throw new Error(errorJson?.error?.message || `Error ${response.status}: ${response.statusText}`);
+      }
     }
 
     if (!response.body) {
