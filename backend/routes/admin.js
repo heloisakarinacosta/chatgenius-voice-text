@@ -129,13 +129,54 @@ router.put('/', async (req, res) => {
     }
     
     console.log('Saving admin config to database');
-    await pool.query(
-      'UPDATE admin_config SET username = ?, password_hash = ?, api_key = ? WHERE id = 1',
-      [username, passwordHash, apiKey]
-    );
     
-    console.log('Admin config updated in database successfully');
-    res.json({ success: true, message: 'Admin configuration updated successfully' });
+    // Check if the apiKey is too long for VARCHAR(100)
+    if (apiKey && apiKey.length > 100) {
+      console.log('API key length:', apiKey.length, 'characters - Using TEXT column');
+    }
+    
+    // First check if the api_key column is TEXT type
+    try {
+      // Try to update with the new values
+      await pool.query(
+        'UPDATE admin_config SET username = ?, password_hash = ?, api_key = ? WHERE id = 1',
+        [username, passwordHash, apiKey]
+      );
+      
+      console.log('Admin config updated in database successfully');
+      res.json({ success: true, message: 'Admin configuration updated successfully' });
+    } catch (updateError) {
+      console.error('Error updating admin config:', updateError);
+      
+      // If there was an error, it might be due to column size
+      if (updateError.code === 'ER_DATA_TOO_LONG') {
+        try {
+          console.log('Attempting to increase api_key column size...');
+          await pool.query('ALTER TABLE admin_config MODIFY COLUMN api_key TEXT');
+          
+          // Try again after altering the column
+          await pool.query(
+            'UPDATE admin_config SET username = ?, password_hash = ?, api_key = ? WHERE id = 1',
+            [username, passwordHash, apiKey]
+          );
+          
+          console.log('Admin config updated after column modification');
+          return res.json({ success: true, message: 'Admin configuration updated successfully' });
+        } catch (alterError) {
+          console.error('Error modifying column and updating:', alterError);
+          return res.status(500).json({ 
+            error: 'Failed to update admin configuration after column modification',
+            details: alterError.message
+          });
+        }
+      }
+      
+      // If it's not a column size issue or the fix failed
+      return res.status(500).json({ 
+        error: 'Failed to update admin configuration',
+        details: updateError.message
+      });
+    }
   } catch (error) {
     console.error('Error updating admin config:', error);
     res.status(500).json({ error: 'Failed to update admin configuration', details: error.message });

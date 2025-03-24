@@ -159,26 +159,50 @@ const createTables = async () => {
       )
     `);
     
-    // Admin config table - Added api_key column
+    // Admin config table - Increased the api_key column size to TEXT
     await pool.query(`
       CREATE TABLE IF NOT EXISTS admin_config (
         id INT PRIMARY KEY,
         username VARCHAR(50) NOT NULL,
         password_hash VARCHAR(100) NOT NULL,
-        api_key VARCHAR(100) DEFAULT '',
+        api_key TEXT DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
     
-    // Check if api_key column exists, if not add it
+    // Check if api_key column exists, if not add it with TEXT type
     try {
       await pool.query(`
-        ALTER TABLE admin_config
-        ADD COLUMN IF NOT EXISTS api_key VARCHAR(100) DEFAULT ''
+        SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'admin_config' 
+        AND COLUMN_NAME = 'api_key'
       `);
-      console.log('Checked and added api_key column if needed');
-    } catch (altError) {
-      console.error('Error checking/adding api_key column:', altError);
+      
+      // Try to alter the column type to TEXT if it exists
+      try {
+        console.log('Attempting to increase api_key column size to TEXT');
+        await pool.query(`
+          ALTER TABLE admin_config
+          MODIFY COLUMN api_key TEXT
+        `);
+        console.log('Successfully increased api_key column size');
+      } catch (altError) {
+        console.error('Error modifying api_key column:', altError);
+      }
+    } catch (checkError) {
+      console.error('Error checking for api_key column:', checkError);
+      
+      // Try to add the column if it doesn't exist
+      try {
+        await pool.query(`
+          ALTER TABLE admin_config
+          ADD COLUMN api_key TEXT DEFAULT ''
+        `);
+        console.log('Added api_key column successfully');
+      } catch (addError) {
+        console.error('Error adding api_key column:', addError);
+      }
     }
     
     console.log('Database tables created/verified');
