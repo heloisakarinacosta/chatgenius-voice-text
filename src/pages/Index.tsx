@@ -23,18 +23,27 @@ const Index = () => {
   const [tempApiKey, setTempApiKey] = useState("");
 
   // Fetch API key from backend
-  const { data: apiKeyData, isLoading: isApiKeyLoading } = useQuery({
+  const { data: apiKeyData, isLoading: isApiKeyLoading, error: apiKeyError } = useQuery({
     queryKey: ['apiKey'],
     queryFn: async () => {
       try {
-        // Primeiro tentamos buscar do backend
+        // First try to fetch from backend
         console.log("Attempting to fetch API key from backend...");
-        const response = await fetch('http://localhost:3001/api/admin/api-key');
+        // Add cache busting to prevent browser caching
+        const cacheBuster = new Date().getTime();
+        const response = await fetch(`http://localhost:3001/api/admin/api-key?_=${cacheBuster}`, {
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          },
+          cache: 'no-store'
+        });
         
         if (!response.ok) {
           if (response.status === 404) {
             console.log('API key not found on server, using from context');
-            // Se não encontrar no backend, use o valor do contexto
+            // If not found on backend, use the value from context
             return { apiKey: adminConfig?.apiKey || null };
           }
           throw new Error(`Failed to fetch API key: ${response.status}`);
@@ -45,23 +54,23 @@ const Index = () => {
         return data;
       } catch (error) {
         console.error('Error fetching API key:', error);
-        console.log("Falling back to context API key:", adminConfig?.apiKey);
+        console.log("Falling back to context API key:", adminConfig?.apiKey ? "exists" : "not set");
         
         // Check if error is due to backend server not running
         if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
           setBackendError(true);
-          toast.error("Backend server não está rodando", {
-            description: "Configure a API Key diretamente no app",
+          toast.error("Backend server is not running", {
+            description: "Configure the API Key directly in the app",
             duration: 10000,
           });
           
-          // Se não tivermos API key e o backend não estiver funcionando, mostrar diálogo
+          // If we don't have an API key and the backend isn't working, show dialog
           if (!adminConfig?.apiKey) {
             setShowSetupDialog(true);
           }
         }
         
-        // Em caso de erro, use o valor do contexto
+        // In case of error, use the value from context
         return { apiKey: adminConfig?.apiKey || null };
       }
     },
@@ -77,12 +86,12 @@ const Index = () => {
 
   const handleSaveApiKey = async () => {
     if (!tempApiKey.trim()) {
-      toast.error("Por favor, insira uma chave API válida");
+      toast.error("Please enter a valid API key");
       return;
     }
 
     try {
-      // Atualizar a API key no context
+      // Update API key in context
       const updatedConfig = {
         ...adminConfig,
         apiKey: tempApiKey.trim()
@@ -93,20 +102,20 @@ const Index = () => {
       if (success) {
         setApiKey(tempApiKey.trim());
         setShowSetupDialog(false);
-        toast.success("API key configurada com sucesso");
+        toast.success("API key configured successfully");
       } else {
-        throw new Error('Falha ao salvar API key');
+        throw new Error('Failed to save API key');
       }
     } catch (error) {
-      console.error('Erro ao salvar API key:', error);
-      toast.error("Falha ao salvar API key", {
-        description: "Tente novamente ou verifique sua conexão"
+      console.error('Error saving API key:', error);
+      toast.error("Failed to save API key", {
+        description: "Try again or check your connection"
       });
     }
   };
 
   if (isApiKeyLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   return (
@@ -121,16 +130,16 @@ const Index = () => {
             </div>
             <div className="ml-3">
               <p className="text-sm text-yellow-700">
-                Backend server não está rodando. Você pode configurar a API key diretamente no aplicativo ou acessar a página de admin.
+                Backend server is not running. You can configure the API key directly in the application or access the admin page.
               </p>
             </div>
             <div className="ml-auto pl-3 flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowSetupDialog(true)}>
-                Configurar API Key
+                Configure API Key
               </Button>
               <Link to="/admin">
                 <Button variant="default" size="sm">
-                  Ir para Admin
+                  Go to Admin
                 </Button>
               </Link>
             </div>
@@ -141,10 +150,10 @@ const Index = () => {
       <Dialog open={showSetupDialog} onOpenChange={setShowSetupDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Configurar OpenAI API Key</DialogTitle>
+            <DialogTitle>Configure OpenAI API Key</DialogTitle>
             <DialogDescription>
-              Insira sua chave de API da OpenAI para usar o chat assistant. 
-              Essa chave será armazenada localmente no seu navegador.
+              Enter your OpenAI API key to use the chat assistant.
+              This key will be stored locally in your browser.
             </DialogDescription>
           </DialogHeader>
           <div className="my-4">
@@ -156,18 +165,24 @@ const Index = () => {
               onChange={(e) => setTempApiKey(e.target.value)}
             />
             <p className="text-sm text-gray-500 mt-2">
-              Você pode obter sua chave API em 
+              You can get your API key at
               <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-500 ml-1">
                 platform.openai.com/api-keys
               </a>
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSetupDialog(false)}>Cancelar</Button>
-            <Button onClick={handleSaveApiKey}>Salvar API Key</Button>
+            <Button variant="outline" onClick={() => setShowSetupDialog(false)}>Cancel</Button>
+            <Button onClick={handleSaveApiKey}>Save API Key</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {apiKeyError && (
+        <div className="p-4 text-sm text-red-500 bg-red-50 rounded m-4">
+          Error loading API key: {apiKeyError.toString()}
+        </div>
+      )}
 
       <ChatWidget apiKey={apiKey} />
     </div>

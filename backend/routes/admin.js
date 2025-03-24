@@ -58,42 +58,59 @@ router.get('/', async (req, res) => {
       return res.json(defaultConfig);
     }
     
+    // Database connection exists, fetch from database
     console.log('Fetching admin config from database');
-    // Only fetch once, prevent infinite recursion
-    const [rows] = await pool.query('SELECT * FROM admin_config WHERE id = 1');
-    
-    if (rows.length === 0) {
-      // Insert default config if not exists
-      console.log('No admin config found in database, creating default');
-      const defaultConfig = {
-        username: "admin",
-        password_hash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
-        api_key: ""
-      };
+    try {
+      const [rows] = await pool.query('SELECT * FROM admin_config WHERE id = 1');
       
-      await pool.query(
-        'INSERT INTO admin_config (id, username, password_hash, api_key) VALUES (1, ?, ?, ?)',
-        [defaultConfig.username, defaultConfig.password_hash, defaultConfig.api_key]
-      );
+      if (rows.length === 0) {
+        // Insert default config if not exists
+        console.log('No admin config found in database, creating default');
+        const defaultConfig = {
+          username: "admin",
+          password_hash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
+          api_key: ""
+        };
+        
+        await pool.query(
+          'INSERT INTO admin_config (id, username, password_hash, api_key) VALUES (1, ?, ?, ?)',
+          [defaultConfig.username, defaultConfig.password_hash, defaultConfig.api_key]
+        );
+        
+        console.log('Created default admin config in database');
+        return res.json({
+          username: defaultConfig.username,
+          passwordHash: defaultConfig.password_hash,
+          apiKey: defaultConfig.api_key
+        });
+      }
       
-      console.log('Created default admin config in database');
+      console.log('Found existing admin config in database');
+      const config = rows[0];
       return res.json({
-        username: defaultConfig.username,
-        passwordHash: defaultConfig.password_hash,
-        apiKey: defaultConfig.api_key
+        username: config.username,
+        passwordHash: config.password_hash,
+        apiKey: config.api_key || ""
+      });
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      // Fallback to default config if database query fails
+      return res.status(500).json({
+        error: 'Database error',
+        details: dbError.message,
+        config: {
+          username: "admin",
+          passwordHash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+          apiKey: ""
+        }
       });
     }
-    
-    console.log('Found existing admin config in database');
-    const config = rows[0];
-    return res.json({
-      username: config.username,
-      passwordHash: config.password_hash,
-      apiKey: config.api_key || ""
-    });
   } catch (error) {
     console.error('Error fetching admin config:', error);
-    res.status(500).json({ error: 'Failed to fetch admin configuration', details: error.message });
+    return res.status(500).json({ 
+      error: 'Failed to fetch admin configuration', 
+      details: error.message 
+    });
   }
 });
 
@@ -146,7 +163,7 @@ router.put('/', async (req, res) => {
       );
       
       console.log('Admin config updated in database successfully');
-      res.json({ success: true, message: 'Admin configuration updated successfully' });
+      return res.json({ success: true, message: 'Admin configuration updated successfully' });
     } catch (updateError) {
       console.error('Error updating admin config:', updateError);
       
@@ -181,7 +198,7 @@ router.put('/', async (req, res) => {
     }
   } catch (error) {
     console.error('Error updating admin config:', error);
-    res.status(500).json({ error: 'Failed to update admin configuration', details: error.message });
+    return res.status(500).json({ error: 'Failed to update admin configuration', details: error.message });
   }
 });
 
@@ -224,10 +241,10 @@ router.get('/api-key', async (req, res) => {
     }
     
     console.log('API key found in database');
-    res.json({ apiKey: rows[0].api_key });
+    return res.json({ apiKey: rows[0].api_key });
   } catch (error) {
     console.error('Error fetching API key:', error);
-    res.status(500).json({ error: 'Failed to fetch API key', details: error.message });
+    return res.status(500).json({ error: 'Failed to fetch API key', details: error.message });
   }
 });
 

@@ -121,12 +121,25 @@ export const updateAgentConfig = async (config: any) => {
 export const getAdminConfig = async () => {
   if (isDbConnected) {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin`, {
-        headers: { 'Cache-Control': 'no-cache' },
+      // Add a cache busting parameter to prevent browser caching
+      const cacheBuster = new Date().getTime();
+      const response = await fetch(`${API_BASE_URL}/admin?_=${cacheBuster}`, {
+        headers: { 
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
         cache: 'no-store'
       });
-      if (!response.ok) throw new Error('Failed to fetch admin config');
+      
+      if (!response.ok) {
+        console.error('Failed to fetch admin config:', response.status);
+        throw new Error('Failed to fetch admin config');
+      }
+      
       const data = await response.json();
+      console.log('Admin config fetched from API successfully');
+      
       return {
         username: data.username,
         passwordHash: data.passwordHash,
@@ -150,7 +163,10 @@ export const updateAdminConfig = async (config: any) => {
       
       const response = await fetch(`${API_BASE_URL}/admin`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
         body: JSON.stringify({
           username: config.username || 'admin',
           passwordHash: config.passwordHash || '',
