@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardDescription, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrainingFile } from "@/types/chat";
@@ -26,6 +26,17 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
   const [openFileId, setOpenFileId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  // Clear success message after 5 seconds
+  useEffect(() => {
+    if (uploadSuccess) {
+      const timer = setTimeout(() => {
+        setUploadSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadSuccess]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -33,6 +44,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
 
     setIsUploading(true);
     setUploadError(null);
+    setUploadSuccess(null);
     
     try {
       // Process only text files
@@ -66,6 +78,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         // For DOCX, we'll store a placeholder and let the backend handle it
         // We can't parse DOCX in the browser easily
         content = `[DOCX Document: ${file.name}]\n\nThis document was uploaded in DOCX format. The content is being processed.`;
+        console.log("Processing DOCX file:", file.name, "Size:", file.size);
       } else {
         // For text files, read as text
         content = await readFileContent(file);
@@ -81,10 +94,11 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         timestamp: new Date()
       };
       
-      console.log("Attempting to add training file:", file.name);
+      console.log("Attempting to add training file:", file.name, "Type:", file.type);
       const success = await addTrainingFile(trainingFile);
       
       if (success) {
+        setUploadSuccess(`Arquivo "${file.name}" adicionado com sucesso`);
         toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
       } else {
         setUploadError(`Erro ao adicionar arquivo "${file.name}"`);
@@ -121,6 +135,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
 
   const handleUploadClick = () => {
     setUploadError(null);
+    setUploadSuccess(null);
     fileInputRef.current?.click();
   };
 
@@ -199,6 +214,13 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
             <div className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 p-3 rounded-md mt-2 text-sm flex items-start gap-2">
               <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
               <div>{uploadError}</div>
+            </div>
+          )}
+
+          {uploadSuccess && (
+            <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 p-3 rounded-md mt-2 text-sm flex items-start gap-2">
+              <CheckCircle2 className="h-5 w-5 flex-shrink-0 mt-0.5" />
+              <div>{uploadSuccess}</div>
             </div>
           )}
         </div>

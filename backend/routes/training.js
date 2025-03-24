@@ -26,12 +26,15 @@ router.post('/', async (req, res) => {
     
     // Special handling for docx files
     if (name.endsWith('.docx') || fileType.includes('openxmlformats-officedocument.wordprocessingml.document')) {
-      console.log('Processing DOCX file:', name);
+      console.log('Processing DOCX file:', name, 'Size:', size);
       // Store the placeholder content as is
       if (!fileContent.includes('[DOCX Document:')) {
         fileContent = `[DOCX Document: ${name}]`;
       }
     }
+    
+    // Log file details
+    console.log(`Saving file: ${name}, Type: ${fileType}, Content length: ${fileContent.length}`);
     
     // Use parameterized query to prevent SQL injection
     await pool.query(
@@ -39,7 +42,7 @@ router.post('/', async (req, res) => {
       [id, name, fileContent, size || 0, fileType, new Date()]
     );
     
-    console.log(`Training file ${name} added successfully`);
+    console.log(`Training file ${name} added successfully with ID: ${id}`);
     res.json({
       success: true,
       message: 'Training file added successfully',
@@ -51,6 +54,27 @@ router.post('/', async (req, res) => {
       error: 'Failed to add training file', 
       details: error.message,
       success: false 
+    });
+  }
+});
+
+// Get all training files
+router.get('/', async (req, res) => {
+  try {
+    const pool = db.getDbConnection();
+    if (!pool) {
+      console.log('Database not connected, using localStorage fallback for getting training files');
+      return res.json([]);
+    }
+    
+    const [rows] = await pool.query('SELECT * FROM training_files ORDER BY timestamp DESC');
+    console.log(`Retrieved ${rows.length} training files from database`);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error getting training files:', error);
+    res.status(500).json({ 
+      error: 'Failed to get training files', 
+      details: error.message
     });
   }
 });

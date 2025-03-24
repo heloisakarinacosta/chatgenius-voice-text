@@ -303,9 +303,34 @@ export const addMessage = async (conversationId: string, message: any) => {
 };
 
 // Training file functions
+export const getTrainingFiles = async () => {
+  if (isDbConnected) {
+    try {
+      console.log('Fetching training files from API...');
+      const response = await fetchWithTimeout(`${API_BASE_URL}/training`, {
+        headers: { 'Cache-Control': 'no-cache' },
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch training files: ${response.status}`);
+      }
+      
+      const files = await response.json();
+      console.log(`Retrieved ${files.length} training files from API`);
+      return files;
+    } catch (error) {
+      console.error('Error fetching training files from API:', error);
+      return localDb.getTrainingFiles();
+    }
+  }
+  return localDb.getTrainingFiles();
+};
+
 export const addTrainingFile = async (file: any) => {
   if (isDbConnected) {
     try {
+      console.log(`Sending training file ${file.name} to API...`);
       const response = await fetchWithTimeout(`${API_BASE_URL}/training`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -319,6 +344,8 @@ export const addTrainingFile = async (file: any) => {
         throw new Error(errorData.error || `Failed to add training file: ${response.status}`);
       }
       
+      const result = await response.json();
+      console.log('Training file API response:', result);
       return true;
     } catch (error) {
       console.error('Error adding training file via API:', error);
@@ -331,6 +358,7 @@ export const addTrainingFile = async (file: any) => {
 export const removeTrainingFile = async (id: string) => {
   if (isDbConnected) {
     try {
+      console.log(`Removing training file with ID ${id} via API...`);
       const response = await fetchWithTimeout(`${API_BASE_URL}/training/${id}`, {
         method: 'DELETE'
       });
@@ -341,6 +369,8 @@ export const removeTrainingFile = async (id: string) => {
         throw new Error(errorData.error || `Failed to remove training file: ${response.status}`);
       }
       
+      const result = await response.json();
+      console.log('Training file removal API response:', result);
       return true;
     } catch (error) {
       console.error('Error removing training file via API:', error);
