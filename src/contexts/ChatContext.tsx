@@ -1,6 +1,8 @@
 
 import React, { createContext, useState, useContext, useCallback, useEffect, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
+import * as db from "../services/database";
+import { toast } from "sonner";
 
 export interface Message {
   id: string;
@@ -78,6 +80,7 @@ interface ChatContextType {
   updateAdminConfig: (config: Partial<AdminConfig>) => void;
   addTrainingFile: (file: File) => Promise<void>;
   removeTrainingFile: (id: string) => void;
+  isDbConnected: boolean;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -115,9 +118,71 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>(defaultWidgetConfig);
   const [agentConfig, setAgentConfig] = useState<AgentConfig>(defaultAgentConfig);
   const [adminConfig, setAdminConfig] = useState<AdminConfig>(defaultAdminConfig);
+  const [isDbConnected, setIsDbConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load configurations from localStorage
+  // Inicializa a conexão com o banco de dados
   useEffect(() => {
+    const initializeDb = async () => {
+      try {
+        const connected = await db.initDatabase();
+        setIsDbConnected(connected);
+        
+        if (connected) {
+          // Carrega dados do banco de dados
+          await loadDataFromDb();
+        } else {
+          // Carrega dados do localStorage como fallback
+          loadDataFromLocalStorage();
+        }
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error initializing database:", error);
+        setIsDbConnected(false);
+        loadDataFromLocalStorage();
+        setIsLoading(false);
+      }
+    };
+    
+    initializeDb();
+  }, []);
+
+  // Carrega dados do banco de dados
+  const loadDataFromDb = async () => {
+    try {
+      // Carrega configurações do widget
+      const widgetConfigData = await db.getWidgetConfig();
+      if (widgetConfigData) {
+        setWidgetConfig(widgetConfigData as WidgetConfig);
+      }
+      
+      // Carrega configurações do agente
+      const agentConfigData = await db.getAgentConfig();
+      if (agentConfigData) {
+        setAgentConfig(agentConfigData as AgentConfig);
+      }
+      
+      // Carrega configurações de admin
+      const adminConfigData = await db.getAdminConfig();
+      if (adminConfigData) {
+        setAdminConfig(adminConfigData as AdminConfig);
+      }
+      
+      // Carrega conversas
+      const conversationsData = await db.getConversations();
+      if (conversationsData && conversationsData.length > 0) {
+        setConversations(conversationsData as Conversation[]);
+      }
+    } catch (error) {
+      console.error("Error loading data from database:", error);
+      toast.error("Failed to load data from database. Using local storage as fallback.");
+      loadDataFromLocalStorage();
+    }
+  };
+
+  // Carrega dados do localStorage como fallback
+  const loadDataFromLocalStorage = () => {
     const storedWidgetConfig = localStorage.getItem("widgetConfig");
     const storedAgentConfig = localStorage.getItem("agentConfig");
     const storedAdminConfig = localStorage.getItem("adminConfig");
@@ -139,23 +204,58 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }));
       setConversations(conversationsWithDates);
     }
-  }, []);
+  };
 
-  // Save configurations to localStorage when they change
+  // Salva configurações quando elas mudam
   useEffect(() => {
-    localStorage.setItem("widgetConfig", JSON.stringify(widgetConfig));
-    localStorage.setItem("agentConfig", JSON.stringify(agentConfig));
-    localStorage.setItem("adminConfig", JSON.stringify(adminConfig));
-    
-    // Deep clone to avoid circular references
-    const conversationsForStorage = conversations.map(conv => ({
-      ...conv,
-      messages: conv.messages.map(msg => ({
-        ...msg,
-      })),
-    }));
-    localStorage.setItem("conversations", JSON.stringify(conversationsForStorage));
-  }, [widgetConfig, agentConfig, adminConfig, conversations]);
+    if (!isLoading) {
+      if (isDbConnected) {
+        // Atualiza no banco de dados
+        db.updateWidgetConfig(widgetConfig);
+      } else {
+        // Salva no localStorage como fallback
+        localStorage.setItem("widgetConfig", JSON.stringify(widgetConfig));
+      }
+    }
+  }, [widgetConfig, isDbConnected, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (isDbConnected) {
+        // Atualiza no banco de dados
+        db.updateAgentConfig(agentConfig);
+      } else {
+        // Salva no localStorage como fallback
+        localStorage.setItem("agentConfig", JSON.stringify(agentConfig));
+      }
+    }
+  }, [agentConfig, isDbConnected, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (isDbConnected) {
+        // Atualiza no banco de dados
+        db.updateAdminConfig(adminConfig);
+      } else {
+        // Salva no localStorage como fallback
+        localStorage.setItem("adminConfig", JSON.stringify(adminConfig));
+      }
+    }
+  }, [adminConfig, isDbConnected, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading && !isDbConnected) {
+      // Salva conversas no localStorage apenas como fallback
+      // Deep clone to avoid circular references
+      const conversationsForStorage = conversations.map(conv => ({
+        ...conv,
+        messages: conv.messages.map(msg => ({
+          ...msg,
+        })),
+      }));
+      localStorage.setItem("conversations", JSON.stringify(conversationsForStorage));
+    }
+  }, [conversations, isDbConnected, isLoading]);
 
   const startNewConversation = useCallback(() => {
     const newId = uuidv4();
@@ -168,8 +268,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     setConversations(prev => [...prev, newConversation]);
     setCurrentConversationId(newId);
+    
+    if (isDbConnected) {
+      // Cria a conversa no banco de dados
+      db.createConversation(newId);
+    }
+    
     return newId;
-  }, []);
+  }, [isDbConnected]);
 
   const switchConversation = useCallback((id: string) => {
     if (conversations.some(conv => conv.id === id)) {
@@ -197,10 +303,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           : conv
       )
     );
-  }, [currentConversationId, startNewConversation]);
+    
+    if (isDbConnected && currentConversationId) {
+      // Adiciona a mensagem no banco de dados
+      db.addMessage(currentConversationId, newMessage);
+    }
+  }, [currentConversationId, startNewConversation, isDbConnected]);
 
   const updateWidgetConfig = useCallback((config: Partial<WidgetConfig>) => {
-    setWidgetConfig(prev => ({ ...prev, ...config }));
+    setWidgetConfig(prev => {
+      const newConfig = { ...prev, ...config };
+      return newConfig;
+    });
   }, []);
 
   const updateAgentConfig = useCallback((config: Partial<AgentConfig>) => {
@@ -211,12 +325,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAdminConfig(prev => ({ ...prev, ...config }));
   }, []);
 
-  // Add a training file
+  // Adiciona um arquivo de treinamento
   const addTrainingFile = useCallback(async (file: File): Promise<void> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         if (event.target && event.target.result) {
           const newFile: TrainingFile = {
             id: uuidv4(),
@@ -232,6 +346,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             trainingFiles: [...prev.trainingFiles, newFile],
           }));
           
+          if (isDbConnected) {
+            // Adiciona o arquivo no banco de dados
+            await db.addTrainingFile(newFile);
+          }
+          
           resolve();
         } else {
           reject(new Error("Failed to read file"));
@@ -244,20 +363,30 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       reader.readAsText(file);
     });
-  }, []);
+  }, [isDbConnected]);
 
-  // Remove a training file
+  // Remove um arquivo de treinamento
   const removeTrainingFile = useCallback((id: string) => {
     setAgentConfig(prev => ({
       ...prev,
       trainingFiles: prev.trainingFiles.filter(file => file.id !== id),
     }));
-  }, []);
+    
+    if (isDbConnected) {
+      // Remove o arquivo do banco de dados
+      db.removeTrainingFile(id);
+    }
+  }, [isDbConnected]);
 
-  // Get messages for the current conversation
+  // Obtém mensagens para a conversa atual
   const messages = currentConversationId 
     ? conversations.find(conv => conv.id === currentConversationId)?.messages || []
     : [];
+
+  // Mostra indicador de carregamento enquanto os dados são inicializados
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
   const value = {
     conversations,
@@ -278,6 +407,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateAdminConfig,
     addTrainingFile,
     removeTrainingFile,
+    isDbConnected,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageCircle, Terminal, Settings, Code, FileText, AlertTriangle } from "lucide-react";
+import { MessageCircle, Terminal, Settings, Code, FileText, AlertTriangle, Database } from "lucide-react";
 import { AgentFunction, useChat } from "@/contexts/ChatContext";
 import ApiKeySection from "@/components/admin/ApiKeySection";
 import WidgetConfigTab from "@/components/admin/WidgetConfigTab";
@@ -10,6 +10,7 @@ import FunctionsTab from "@/components/admin/FunctionsTab";
 import SettingsTab from "@/components/admin/SettingsTab";
 import TrainingFilesTab from "@/components/admin/TrainingFilesTab";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 interface AdminPanelProps {
   apiKey: string;
@@ -26,7 +27,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
     updateAgentConfig, 
     updateAdminConfig,
     addTrainingFile,
-    removeTrainingFile
+    removeTrainingFile,
+    isDbConnected
   } = useChat();
   const [functions, setFunctions] = useState<AgentFunction[]>(agentConfig.functions);
   const [activeTab, setActiveTab] = useState("widget");
@@ -50,13 +52,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
   
   return (
     <div className="container max-w-4xl py-6">
-      <h1 className="text-3xl font-bold mb-6">Admin Panel</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Admin Panel</h1>
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4" />
+          <Badge variant={isDbConnected ? "default" : "destructive"}>
+            {isDbConnected ? "MariaDB Connected" : "Using localStorage"}
+          </Badge>
+        </div>
+      </div>
       
       {!apiKey && (
         <Alert variant="destructive" className="mb-6">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
             Por favor, configure sua chave da API OpenAI para que o assistente funcione corretamente.
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {!isDbConnected && (
+        <Alert variant="warning" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Não foi possível conectar ao banco de dados MariaDB. Usando armazenamento local como fallback.
+            Verifique as configurações de conexão do banco de dados em .env.
           </AlertDescription>
         </Alert>
       )}
