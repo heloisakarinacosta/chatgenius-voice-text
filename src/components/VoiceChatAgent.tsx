@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { Mic, MicOff, Send, StopCircle, Bot, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -117,7 +116,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }
       
       // Adicionar a mensagem do usuário
-      addMessage(transcript, "user");
+      if (addMessage) {
+        addMessage(transcript, "user");
+      }
       
       // Processar a resposta
       await processResponse(transcript);
@@ -144,7 +145,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     
     try {
       // Adicionar espaço para a resposta do assistente
-      addMessage("", "assistant");
+      const assistantId = addMessage ? addMessage("", "assistant") : "";
       
       // Configurar opções para streaming
       const streamOptions: any = {
@@ -175,16 +176,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             assistantMessage += chunk;
             
             // Atualizar a mensagem na conversa
-            const updatedMessages = [...messages];
-            if (updatedMessages.length > 0) {
-              const lastAssistantMessageIndex = updatedMessages.findIndex(
-                msg => msg.role === "assistant"
-              );
-              
-              if (lastAssistantMessageIndex !== -1) {
-                const lastMessage = updatedMessages[lastAssistantMessageIndex];
-                lastMessage.content = assistantMessage;
-              }
+            if (assistantId && typeof updateMessage === 'function') {
+              updateMessage(assistantId, assistantMessage);
             }
           },
           onComplete: async (fullMessage) => {
@@ -225,7 +218,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           },
           onError: (error) => {
             console.error("Erro na resposta da IA:", error);
-            addMessage("Desculpe, ocorreu um erro ao processar sua solicitação.", "assistant");
+            if (addMessage) {
+              addMessage("Desculpe, ocorreu um erro ao processar sua solicitação.", "assistant");
+            }
             setIsProcessing(false);
             
             toast.error("Erro ao obter resposta", {
@@ -257,7 +252,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     
     const userMessage = inputValue.trim();
     setInputValue("");
-    addMessage(userMessage, "user");
+    if (addMessage) {
+      addMessage(userMessage, "user");
+    }
     setIsProcessing(true);
     
     processResponse(userMessage);

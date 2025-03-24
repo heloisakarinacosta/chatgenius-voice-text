@@ -51,7 +51,6 @@ export interface AgentConfig {
   functions: AgentFunction[];
   voice: VoiceConfig;
   trainingFiles: TrainingFile[];
-  // Add missing fields needed by ChatWidget and VoiceChatAgent
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -73,7 +72,7 @@ export interface ChatContextType {
   adminConfig: AdminConfig;
   isDbConnected: boolean;
   
-  // Widget state fields (missing in previous definition)
+  // Widget state fields
   isWidgetOpen?: boolean;
   setIsWidgetOpen?: (isOpen: boolean) => void;
   isVoiceChatActive?: boolean;
@@ -84,9 +83,9 @@ export interface ChatContextType {
   updateAgentConfig: (config: AgentConfig) => Promise<boolean>;
   updateAdminConfig: (config: AdminConfig) => Promise<boolean>;
   sendMessage: (content: string) => Promise<boolean>;
-  addMessage?: (message: Message) => void;
-  updateMessage?: (messageId: string, updatedContent: string) => void;
-  startNewConversation?: () => void;
+  addMessage: (content: string, role: 'user' | 'assistant' | 'system') => string;
+  updateMessage: (messageId: string, updatedContent: string) => void;
+  startNewConversation: () => void;
   
   // Training file methods
   addTrainingFile: (file: TrainingFile) => Promise<boolean>;

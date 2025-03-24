@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { Mic, MicOff, MessageSquare, Volume2, PauseCircle, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,12 +25,10 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const textInputRef = useRef<HTMLInputElement>(null);
   const [lastUserInteraction, setLastUserInteraction] = useState<Date>(new Date());
 
-  // Auto-lisining mode
   useEffect(() => {
     if (isListening && !isRecording && !isTranscribing && !isTextInputMode) {
       const timeSinceLastInteraction = new Date().getTime() - lastUserInteraction.getTime();
       
-      // Começar gravação após um tempo de silêncio (3 segundos)
       if (timeSinceLastInteraction > 3000) {
         startRecording();
       }
@@ -44,7 +41,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     };
   }, [isListening, isRecording, isTranscribing, isTextInputMode, lastUserInteraction]);
 
-  // Inicializar gravador de mídia
   const startRecording = async () => {
     try {
       console.log("Solicitando acesso ao microfone...");
@@ -86,7 +82,9 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           
           if (transcript) {
             console.log(`Transcrição: "${transcript}"`);
-            addMessage(transcript, "user");
+            if (addMessage) {
+              addMessage(transcript, "user");
+            }
             setLastUserInteraction(new Date());
           } else {
             console.error("Transcrição vazia recebida");
@@ -114,7 +112,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           });
         }
         
-        // Limpar tempo de gravação e chunks
         setRecordingTime(0);
         audioChunksRef.current = [];
       };
@@ -122,10 +119,8 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       mediaRecorder.start();
       setIsRecording(true);
       
-      // Iniciar timer de gravação
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => {
-          // Auto-encerrar se a gravação for muito longa (15 segundos)
           if (prev >= 14) {
             if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
               stopRecording();
@@ -162,7 +157,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       console.log("Parando a gravação");
       mediaRecorderRef.current.stop();
       
-      // Parar todas as pistas no stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => {
           console.log(`Parando faixa: ${track.kind}`);
@@ -173,7 +167,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       
       setIsRecording(false);
       
-      // Limpar o timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -181,7 +174,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Alternar chat por voz
   const toggleVoiceChat = () => {
     if (isVoiceChatActive) {
       setIsVoiceChatActive(false);
@@ -193,7 +185,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Alternar entre áudio e texto
   const toggleInputMode = () => {
     setIsTextInputMode(!isTextInputMode);
     
@@ -201,14 +192,12 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       if (isRecording) {
         stopRecording();
       }
-      // Foca no input de texto
       setTimeout(() => {
         textInputRef.current?.focus();
       }, 100);
     }
   };
 
-  // Mudar para modo texto
   const switchToTextMode = () => {
     if (isRecording) {
       stopRecording();
@@ -216,24 +205,23 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     setIsVoiceChatActive(false);
   };
 
-  // Enviar mensagem de texto
   const handleSendText = () => {
     if (!textInput.trim()) return;
     
-    addMessage(textInput, "user");
+    if (addMessage) {
+      addMessage(textInput, "user");
+    }
     setTextInput("");
     setIsTextInputMode(false);
     setLastUserInteraction(new Date());
   };
 
-  // Formatar tempo de gravação
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Lidar com tecla Enter para enviar mensagem de texto
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -241,7 +229,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Alternar escuta automática
   const toggleListening = () => {
     setIsListening(!isListening);
     if (isRecording) {
@@ -249,7 +236,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Limpar ao desmontar
   useEffect(() => {
     return () => {
       if (timerRef.current) {

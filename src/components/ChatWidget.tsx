@@ -349,14 +349,18 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
 
   const toggleWidget = () => {
-    if (!isWidgetOpen) {
+    if (!isWidgetOpen && startNewConversation) {
       startNewConversation();
     }
-    setIsWidgetOpen(!isWidgetOpen);
+    if (setIsWidgetOpen) {
+      setIsWidgetOpen(!isWidgetOpen);
+    }
   };
 
   const toggleVoiceMode = (value: string) => {
-    setIsVoiceChatActive(value === "voice");
+    if (setIsVoiceChatActive) {
+      setIsVoiceChatActive(value === "voice");
+    }
   };
 
   return (
