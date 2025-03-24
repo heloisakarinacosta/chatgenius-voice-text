@@ -1,4 +1,3 @@
-
 // Local storage fallback implementation for database operations
 
 export interface WidgetConfig {
@@ -36,6 +35,7 @@ export interface AgentConfig {
 export interface AdminConfig {
   username: string;
   passwordHash: string;
+  apiKey: string;
 }
 
 export interface Message {
@@ -129,21 +129,45 @@ export const updateAgentConfig = (config: AgentConfig): boolean => {
 };
 
 // Get admin configuration from localStorage
-export const getAdminConfig = (): AdminConfig => {
-  const storedConfig = localStorage.getItem("adminConfig");
-  if (storedConfig) {
-    return JSON.parse(storedConfig);
+export const getAdminConfig = () => {
+  const adminConfig = localStorage.getItem('adminConfig');
+  
+  if (!adminConfig) {
+    return {
+      username: 'admin',
+      passwordHash: '',
+      apiKey: ''
+    };
   }
-  return defaultAdminConfig;
+  
+  try {
+    const parsedConfig = JSON.parse(adminConfig);
+    return {
+      username: parsedConfig.username || 'admin',
+      passwordHash: parsedConfig.passwordHash || '',
+      apiKey: parsedConfig.apiKey || ''
+    };
+  } catch (e) {
+    console.error('Error parsing admin config from localStorage:', e);
+    return {
+      username: 'admin',
+      passwordHash: '',
+      apiKey: ''
+    };
+  }
 };
 
 // Save admin configuration to localStorage
-export const updateAdminConfig = (config: AdminConfig): boolean => {
+export const updateAdminConfig = (config) => {
   try {
-    localStorage.setItem("adminConfig", JSON.stringify(config));
+    localStorage.setItem('adminConfig', JSON.stringify({
+      username: config.username || 'admin',
+      passwordHash: config.passwordHash || '',
+      apiKey: config.apiKey || ''
+    }));
     return true;
-  } catch (error) {
-    console.error("Error saving admin config:", error);
+  } catch (e) {
+    console.error('Error saving admin config to localStorage:', e);
     return false;
   }
 };
@@ -228,4 +252,3 @@ export const removeTrainingFile = (id: string): boolean => {
     return false;
   }
 };
-
