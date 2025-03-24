@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { Mic, MicOff, Send, StopCircle, Bot, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ interface VoiceChatAgentProps {
 }
 
 const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
-  const { agentConfig, messages, addMessage } = useChat();
+  const { agentConfig, messages, addMessage, updateMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -176,7 +177,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             assistantMessage += chunk;
             
             // Atualizar a mensagem na conversa
-            if (assistantId && typeof updateMessage === 'function') {
+            if (assistantId && updateMessage) {
               updateMessage(assistantId, assistantMessage);
             }
           },

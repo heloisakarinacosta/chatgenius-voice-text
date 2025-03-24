@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as database from "@/services/databaseService";
@@ -24,7 +23,7 @@ export type {
   TrainingFile
 };
 
-// Create the chat context
+// Create the chat context with correct types
 export const ChatContext = createContext<ChatContextType>({
   messages: [],
   conversations: [],
@@ -57,10 +56,17 @@ export const ChatContext = createContext<ChatContextType>({
     apiKey: ""
   },
   isDbConnected: false,
+  isWidgetOpen: false,
+  setIsWidgetOpen: () => {},
+  isVoiceChatActive: false,
+  setIsVoiceChatActive: () => {},
   updateWidgetConfig: () => Promise.resolve(false),
   updateAgentConfig: () => Promise.resolve(false),
   updateAdminConfig: () => Promise.resolve(false),
   sendMessage: () => Promise.resolve(false),
+  addMessage: () => "",
+  updateMessage: () => {},
+  startNewConversation: () => {},
   addTrainingFile: () => Promise.resolve(false),
   removeTrainingFile: () => Promise.resolve(false),
   loadData: () => Promise.resolve()
@@ -227,8 +233,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   
   // Function to add a message directly
-  const addMessage = (message: Message) => {
-    setMessages(prev => [...prev, message]);
+  const addMessage = (content: string, role: "user" | "assistant" | "system"): string => {
+    const messageId = uuidv4();
+    const newMessage: Message = {
+      id: messageId,
+      role: role,
+      content: content,
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    
     // Update conversation if it exists
     if (currentConversationId) {
       setConversations(prev => {
@@ -236,13 +251,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (conv.id === currentConversationId) {
             return {
               ...conv,
-              messages: [...conv.messages, message]
+              messages: [...conv.messages, newMessage]
             };
           }
           return conv;
         });
       });
     }
+    
+    return messageId;
   };
 
   // Function to update a message
@@ -320,7 +337,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const messageAdded = await database.addMessage(currentConversationId as string, newMessage);
     
     if (messageAdded) {
-      addMessage(newMessage);
+      // Use the existing message object instead of creating a new one
+      setMessages(prev => [...prev, newMessage]);
+      
+      // Update conversation
+      setConversations(prev => {
+        return prev.map(conv => {
+          if (conv.id === currentConversationId) {
+            return {
+              ...conv,
+              messages: [...conv.messages, newMessage]
+            };
+          }
+          return conv;
+        });
+      });
+      
       return true;
     } else {
       console.error('Failed to add message to conversation');

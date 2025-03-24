@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { Mic, MicOff, MessageSquare, Volume2, PauseCircle, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ interface VoiceChatProps {
 }
 
 const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
-  const { isVoiceChatActive, setIsVoiceChatActive, addMessage } = useChat();
+  const { isVoiceChatActive, setIsVoiceChatActive, addMessage, updateMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
   const [isListening, setIsListening] = useState(true);
   const [recordingTime, setRecordingTime] = useState(0);
