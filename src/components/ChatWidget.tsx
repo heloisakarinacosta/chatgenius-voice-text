@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { Send, X, MessageCircle, Volume2, Mic, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -102,7 +101,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     
     if (!apiKey) {
       toast.error("API Key não configurada", {
-        description: "Por favor, configure sua chave de API OpenAI no painel de administração.",
+        description: "Entre em contato com o administrador para configurar a API da OpenAI.",
         action: {
           label: "Configurar",
           onClick: () => window.location.href = "/admin",
@@ -363,11 +362,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               <Settings className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
               <h3 className="text-lg font-medium">API Key não configurada</h3>
               <p className="text-sm text-muted-foreground mt-2 mb-4">
-                Configure sua chave de API OpenAI para começar a usar o chat.
+                Entre em contato com o administrador para configurar a API da OpenAI.
               </p>
-              <Link to="/admin">
-                <Button>Configurar API Key</Button>
-              </Link>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">

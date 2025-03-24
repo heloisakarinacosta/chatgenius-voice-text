@@ -1,4 +1,3 @@
-
 const mysql = require('mysql2/promise');
 
 // Database connection configuration
@@ -127,6 +126,7 @@ const createTables = async () => {
         id INT PRIMARY KEY,
         username VARCHAR(50) NOT NULL,
         password_hash VARCHAR(100) NOT NULL,
+        api_key VARCHAR(100) DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);

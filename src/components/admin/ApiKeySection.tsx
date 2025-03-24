@@ -14,6 +14,7 @@ interface ApiKeySectionProps {
 const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
   const [keyInput, setKeyInput] = useState(apiKey);
   const [isSaved, setIsSaved] = useState(Boolean(apiKey));
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sincronizar o estado local quando a prop apiKey mudar
   useEffect(() => {
@@ -21,16 +22,25 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
     setIsSaved(Boolean(apiKey));
   }, [apiKey]);
 
-  const handleSaveKey = () => {
+  const handleSaveKey = async () => {
     if (!keyInput.trim()) {
       toast.error("Por favor, insira uma chave API válida");
       return;
     }
 
-    // Atualizar a chave no componente pai (que salva no localStorage)
-    setApiKey(keyInput.trim());
-    setIsSaved(true);
-    toast.success("Chave API da OpenAI salva com sucesso");
+    try {
+      setIsSaving(true);
+      // Atualizar a chave através da função fornecida pelo componente pai
+      setApiKey(keyInput.trim());
+      setIsSaved(true);
+    } catch (error) {
+      console.error("Erro ao salvar a chave API:", error);
+      toast.error("Erro ao salvar a chave API", {
+        description: "Houve um problema ao atualizar a chave API. Por favor, tente novamente."
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -47,13 +57,16 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
           }}
           placeholder="sk-..."
           className="flex-1"
+          disabled={isSaving}
         />
         <Button 
           variant={keyInput ? "default" : "destructive"}
-          disabled={!keyInput || (keyInput === apiKey && isSaved)}
+          disabled={!keyInput || (keyInput === apiKey && isSaved) || isSaving}
           onClick={handleSaveKey}
         >
-          {isSaved ? (
+          {isSaving ? (
+            <span className="animate-pulse">Salvando...</span>
+          ) : isSaved ? (
             <>
               <Check className="h-4 w-4 mr-2" />
               Chave Salva
@@ -67,7 +80,7 @@ const ApiKeySection: React.FC<ApiKeySectionProps> = ({ apiKey, setApiKey }) => {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground mt-1">
-        Sua chave API é armazenada localmente e nunca enviada aos nossos servidores.
+        A chave API é armazenada no servidor e usada apenas para comunicações com a OpenAI.
       </p>
     </div>
   );
