@@ -72,9 +72,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ apiKey, setApiKey, isAuthentica
       )}
       
       {!isDbConnected && (
-        <Alert variant="warning" className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
+        <Alert variant="default" className="mb-6 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
+          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+          <AlertDescription className="text-yellow-600 dark:text-yellow-400">
             Não foi possível conectar ao banco de dados MariaDB. Usando armazenamento local como fallback.
             Verifique as configurações de conexão do banco de dados em .env.
           </AlertDescription>
