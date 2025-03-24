@@ -18,17 +18,18 @@ const ensureDataDirectory = () => {
 // Get admin configuration
 router.get('/', async (req, res) => {
   try {
+    console.log('Request received for admin config');
     const pool = db.getDbConnection();
     if (!pool) {
       console.log('Database not connected, using fallback file storage');
-      // Se não houver conexão com o banco de dados, busque do arquivo local
+      // If there's no database connection, fetch from local file
       const dataDir = ensureDataDirectory();
       const configPath = path.join(dataDir, 'config.json');
       
       if (fs.existsSync(configPath)) {
         try {
           const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          console.log('Admin config loaded from file:', configData);
+          console.log('Admin config loaded from file');
           return res.json({
             username: configData.username || "admin",
             passwordHash: configData.passwordHash || "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
@@ -58,6 +59,7 @@ router.get('/', async (req, res) => {
     }
     
     console.log('Fetching admin config from database');
+    // Only fetch once, prevent infinite recursion
     const [rows] = await pool.query('SELECT * FROM admin_config WHERE id = 1');
     
     if (rows.length === 0) {
@@ -84,7 +86,7 @@ router.get('/', async (req, res) => {
     
     console.log('Found existing admin config in database');
     const config = rows[0];
-    res.json({
+    return res.json({
       username: config.username,
       passwordHash: config.password_hash,
       apiKey: config.api_key || ""
@@ -108,7 +110,7 @@ router.put('/', async (req, res) => {
     const pool = db.getDbConnection();
     if (!pool) {
       console.log('Database not connected, saving to fallback file storage');
-      // Se não houver conexão com o banco de dados, salve no arquivo local
+      // If there's no database connection, save to local file
       const dataDir = ensureDataDirectory();
       const configPath = path.join(dataDir, 'config.json');
       
@@ -189,13 +191,13 @@ router.get('/api-key', async (req, res) => {
     console.log('Request received for API key');
     const pool = db.getDbConnection();
     if (!pool) {
-      // Se não houver conexão com o banco de dados, busque do arquivo local
+      // If there's no database connection, fetch from local file
       console.log('Database not connected, using fallback file storage for API key');
       const dataDir = ensureDataDirectory();
       const configPath = path.join(dataDir, 'config.json');
       
       try {
-        // Tentativa de buscar de um arquivo local de backup
+        // Attempt to fetch from a local backup file
         if (fs.existsSync(configPath)) {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
           if (config.apiKey) {
@@ -204,7 +206,7 @@ router.get('/api-key', async (req, res) => {
           }
         }
         console.log('API key not found in config file');
-        // Se não encontrar arquivo local ou não tiver API key, retorne 404
+        // If local file or API key not found, return 404
         return res.status(404).json({ error: 'API key not configured' });
       } catch (fileError) {
         console.error('Error reading from local file:', fileError);
@@ -212,7 +214,7 @@ router.get('/api-key', async (req, res) => {
       }
     }
     
-    // Se tiver conexão com banco de dados, busque de lá
+    // If database connection exists, fetch from there
     console.log('Fetching API key from database');
     const [rows] = await pool.query('SELECT api_key FROM admin_config WHERE id = 1');
     
