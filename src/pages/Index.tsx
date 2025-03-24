@@ -90,12 +90,13 @@ const Index = () => {
   }, [adminConfig, backendError, apiCheckInProgress]);
 
   // Fetch API key from backend, with reduced stale time and cache time
+  // Updated to use gcTime instead of cacheTime for React Query v5+
   const { data: apiKeyData, isLoading: isApiKeyLoading, error: apiKeyError } = useQuery({
     queryKey: ['apiKey'],
     queryFn: fetchApiKey,
     retry: 1, // Only retry once to avoid too many failed requests
     staleTime: 30000, // Consider data stale after 30 seconds
-    cacheTime: 60000, // Cache for 1 minute only
+    gcTime: 60000, // Cache for 1 minute only (previously cacheTime)
     refetchOnWindowFocus: false, // Don't refetch when window regains focus
     refetchOnMount: false, // Don't refetch when component mounts
   });

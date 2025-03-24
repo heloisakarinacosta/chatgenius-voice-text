@@ -20,9 +20,10 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // Use parameterized query to prevent SQL injection
     await pool.query(
       'INSERT INTO training_files (id, name, content, size, type, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, content, size, type, new Date()]
+      [id, name, content || '', size || 0, type || 'text/plain', new Date()]
     );
     
     console.log(`Training file ${name} added successfully`);
@@ -33,7 +34,11 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error adding training file:', error);
-    res.status(500).json({ error: 'Failed to add training file', details: error.message });
+    res.status(500).json({ 
+      error: 'Failed to add training file', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 
@@ -60,7 +65,11 @@ router.delete('/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error removing training file:', error);
-    res.status(500).json({ error: 'Failed to remove training file', details: error.message });
+    res.status(500).json({ 
+      error: 'Failed to remove training file', 
+      details: error.message,
+      success: false 
+    });
   }
 });
 

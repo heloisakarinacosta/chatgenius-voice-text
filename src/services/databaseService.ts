@@ -1,6 +1,3 @@
-
-// Only modifying a section of the file to implement request timeout and prevent excessive retries
-
 import * as localDb from './localStorageDb';
 
 // Base URL for the API
@@ -9,11 +6,14 @@ const API_BASE_URL = 'http://localhost:3001/api';
 // Configuration for fetch requests
 const FETCH_TIMEOUT = 3000; // 3 seconds timeout
 const MAX_RETRIES = 1;
+const RETRY_DELAY = 1000; // 1 second between retries
 
 // This file serves as a facade over actual database implementations
 // It will use either the API connection (to the backend) or localStorage as a fallback
 let isDbConnected = false;
 let connectionAttempted = false;
+let connectionRetryCount = 0;
+let lastConnectionAttempt = 0;
 
 // Helper function to create a fetch request with timeout
 const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
@@ -34,13 +34,32 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
 };
 
 // Initialize database connection - this will try to connect to the backend API
+// Added retry delay to prevent rapid reconnection attempts
 export const initDatabase = async () => {
-  if (connectionAttempted) {
+  // Check if we've already tried recently to avoid hammering the server
+  const now = Date.now();
+  if (connectionAttempted && (now - lastConnectionAttempt) < RETRY_DELAY) {
+    console.log('Skipping connection attempt - too soon since last try');
     return isDbConnected;
+  }
+  
+  // Check if we've exceeded max retries
+  if (connectionRetryCount >= MAX_RETRIES) {
+    // Only try again after a longer cooldown period (10 seconds)
+    if ((now - lastConnectionAttempt) < 10000) {
+      console.log('Max retries exceeded, using localStorage');
+      return isDbConnected;
+    } else {
+      // Reset retry count after cooldown
+      connectionRetryCount = 0;
+    }
   }
 
   try {
     connectionAttempted = true;
+    lastConnectionAttempt = now;
+    connectionRetryCount++;
+    
     console.log('Attempting to connect to backend API at:', API_BASE_URL);
     const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
       headers: { 'Cache-Control': 'no-cache' },
@@ -55,6 +74,11 @@ export const initDatabase = async () => {
     const data = await response.json();
     console.log('Backend health check response:', data);
     isDbConnected = data.dbConnected;
+    
+    // Reset retry count on successful connection
+    if (isDbConnected) {
+      connectionRetryCount = 0;
+    }
     
     console.log(`Using ${isDbConnected ? 'backend API with database' : 'localStorage fallback'} for data storage`);
     
