@@ -295,6 +295,7 @@ export async function streamOpenAI(
     let functionName = "";
     let functionArguments = "";
     let toolCallId = "";
+    let receivedContent = false; // Flag para verificar se recebemos algum conteúdo
 
     console.log("Iniciando leitura do stream");
 
@@ -359,8 +360,18 @@ export async function streamOpenAI(
                 console.error("Erro ao executar função:", error);
                 callbacks.onError?.(error);
               }
-            } else if (callbacks.onComplete) {
-              callbacks.onComplete(fullMessage);
+            } else {
+              // Se não recebemos nenhum conteúdo mas chegamos ao [DONE], envie uma mensagem de fallback
+              if (!receivedContent && fullMessage.trim() === "") {
+                console.warn("Stream concluído sem conteúdo recebido");
+                const fallbackMessage = "Desculpe, não consegui gerar uma resposta. Por favor, tente novamente.";
+                fullMessage = fallbackMessage;
+                callbacks.onMessage?.(fallbackMessage);
+              }
+              
+              if (callbacks.onComplete) {
+                callbacks.onComplete(fullMessage);
+              }
             }
             continue;
           }
@@ -390,14 +401,31 @@ export async function streamOpenAI(
             // Regular content
             else if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
               const content = json.choices[0].delta.content;
-              fullMessage += content;
-              callbacks.onMessage?.(content);
+              if (content && content.trim() !== "") {
+                receivedContent = true;
+                fullMessage += content;
+                callbacks.onMessage?.(content);
+                console.log("Recebido chunk de conteúdo:", content);
+              }
+            } else if (json.choices && json.choices[0].delta && Object.keys(json.choices[0].delta).length === 0) {
+              // Este é o primeiro chunk (geralmente vazio)
+              console.log("Primeiro chunk recebido (vazio)");
+            } else {
+              console.log("Chunk recebido sem conteúdo:", json);
             }
           } catch (e) {
             console.error("Erro ao parsear JSON do stream:", e, "Line:", line);
           }
         }
       }
+    }
+
+    // Se não houve conteúdo mas o stream terminou, vamos enviar uma mensagem padrão
+    if (!receivedContent && fullMessage.trim() === "") {
+      console.warn("Nenhum conteúdo recebido após término do stream");
+      const fallbackMessage = "Desculpe, não consegui gerar uma resposta. Por favor, tente novamente.";
+      fullMessage = fallbackMessage;
+      callbacks.onMessage?.(fallbackMessage);
     }
 
     // Make sure to complete if we reach here and haven't called onComplete yet

@@ -1,8 +1,9 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, ReactNode } from "react";
-import { v4 as uuidv4 } from "uuid";
-import * as db from "../services/databaseService";
-import { toast } from "sonner";
 
+import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
+import { fetchWidgetConfig, fetchAgentConfig } from "@/services/databaseService";
+import { v4 as uuidv4 } from "uuid";
+
+// Defina os tipos
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -10,18 +11,12 @@ export interface Message {
   timestamp: Date;
 }
 
-export interface Conversation {
-  id: string;
-  messages: Message[];
-  isActive: boolean;
-  createdAt: Date;
-}
-
-export interface VoiceConfig {
-  enabled: boolean;
-  voiceId: string;
-  language: string;
-  latency: number;
+export interface WidgetConfig {
+  position: string;
+  title: string;
+  subtitle: string;
+  primaryColor: string;
+  iconType: string;
 }
 
 export interface TrainingFile {
@@ -33,407 +28,202 @@ export interface TrainingFile {
   timestamp: Date;
 }
 
-export interface AgentFunction {
-  name: string;
-  description: string;
-  parameters: Record<string, any>;
-  webhook: string;
-}
-
 export interface AgentConfig {
   systemPrompt: string;
-  functions: AgentFunction[];
-  voice: VoiceConfig;
-  trainingFiles: TrainingFile[];
   model: string;
   maxTokens: number;
   temperature: number;
   detectEmotion: boolean;
-}
-
-export interface WidgetConfig {
-  position: "top-right" | "top-left" | "bottom-right" | "bottom-left" | "center-right" | "center-left";
-  title: string;
-  subtitle: string;
-  primaryColor: string;
-  iconType: "chat" | "support" | "help";
-}
-
-export interface AdminConfig {
-  username: string;
-  passwordHash: string;
+  voice: {
+    enabled: boolean;
+    voiceId: string;
+    language: string;
+    latency: number;
+  };
+  functions: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, any>;
+    webhook?: string;
+  }>;
+  trainingFiles: TrainingFile[];
 }
 
 interface ChatContextType {
-  conversations: Conversation[];
-  currentConversationId: string | null;
   isWidgetOpen: boolean;
+  setIsWidgetOpen: (open: boolean) => void;
   isVoiceChatActive: boolean;
-  widgetConfig: WidgetConfig;
-  agentConfig: AgentConfig;
-  adminConfig: AdminConfig;
+  setIsVoiceChatActive: (active: boolean) => void;
   messages: Message[];
-  setIsWidgetOpen: (isOpen: boolean) => void;
-  setIsVoiceChatActive: (isActive: boolean) => void;
-  startNewConversation: () => string;
-  switchConversation: (id: string) => void;
-  addMessage: (content: string, role: "user" | "assistant" | "system") => void;
-  updateWidgetConfig: (config: Partial<WidgetConfig>) => void;
-  updateAgentConfig: (config: Partial<AgentConfig>) => void;
-  updateAdminConfig: (config: Partial<AdminConfig>) => void;
-  addTrainingFile: (file: File) => Promise<void>;
+  addMessage: (content: string, role: "user" | "assistant" | "system") => string;
+  updateMessage: (id: string, content: string) => void;
+  clearMessages: () => void;
+  startNewConversation: () => void;
+  widgetConfig: WidgetConfig;
+  setWidgetConfig: (config: WidgetConfig) => void;
+  agentConfig: AgentConfig;
+  setAgentConfig: (config: AgentConfig) => void;
+  addTrainingFile: (file: TrainingFile) => void;
   removeTrainingFile: (id: string) => void;
   isDbConnected: boolean;
+  setIsDbConnected: (connected: boolean) => void;
 }
 
-const ChatContext = createContext<ChatContextType | undefined>(undefined);
-
-const defaultWidgetConfig: WidgetConfig = {
-  position: "bottom-right",
-  title: "Assistente de Chat",
-  subtitle: "Como posso ajudar você hoje?",
-  primaryColor: "#000000",
-  iconType: "chat",
-};
-
-const defaultAgentConfig: AgentConfig = {
-  systemPrompt: "Você é um assistente útil e prestativo. Forneça informações claras e concisas para as perguntas do usuário. Responda sempre em português do Brasil.",
-  functions: [],
-  voice: {
-    enabled: true,
-    voiceId: "nova", // Voz mais natural para português
-    language: "pt-BR",
-    latency: 100,
+// Valor padrão para o contexto
+const defaultContext: ChatContextType = {
+  isWidgetOpen: false,
+  setIsWidgetOpen: () => {},
+  isVoiceChatActive: false,
+  setIsVoiceChatActive: () => {},
+  messages: [],
+  addMessage: () => "",
+  updateMessage: () => {},
+  clearMessages: () => {},
+  startNewConversation: () => {},
+  widgetConfig: {
+    position: "bottom-right",
+    title: "Chat Assistant",
+    subtitle: "Como posso ajudar você hoje?",
+    primaryColor: "#000000",
+    iconType: "chat",
   },
-  trainingFiles: [],
-  model: "gpt-4o-mini",
-  maxTokens: 1024,
-  temperature: 0.7,
-  detectEmotion: false,
+  setWidgetConfig: () => {},
+  agentConfig: {
+    systemPrompt: "Você é um assistente de IA útil e amigável.",
+    model: "gpt-4o-mini",
+    maxTokens: 1024,
+    temperature: 0.7,
+    detectEmotion: false,
+    voice: {
+      enabled: true,
+      voiceId: "alloy",
+      language: "pt-BR",
+      latency: 100,
+    },
+    functions: [],
+    trainingFiles: [],
+  },
+  setAgentConfig: () => {},
+  addTrainingFile: () => {},
+  removeTrainingFile: () => {},
+  isDbConnected: false,
+  setIsDbConnected: () => {},
 };
 
-const defaultAdminConfig: AdminConfig = {
-  username: "admin",
-  passwordHash: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918", // "admin" - SHA-256 hashed
-};
+// Crie o contexto
+const ChatContext = createContext<ChatContextType>(defaultContext);
 
-export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+// Hook personalizado para acessar o contexto
+export const useChat = () => useContext(ChatContext);
+
+// Provedor do contexto
+export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const [isVoiceChatActive, setIsVoiceChatActive] = useState(false);
-  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>(defaultWidgetConfig);
-  const [agentConfig, setAgentConfig] = useState<AgentConfig>(defaultAgentConfig);
-  const [adminConfig, setAdminConfig] = useState<AdminConfig>(defaultAdminConfig);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>(defaultContext.widgetConfig);
+  const [agentConfig, setAgentConfig] = useState<AgentConfig>(defaultContext.agentConfig);
   const [isDbConnected, setIsDbConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
+  // Carrega a configuração inicial
   useEffect(() => {
-    const initializeDb = async () => {
+    const loadConfig = async () => {
       try {
-        const connected = await db.initDatabase();
-        setIsDbConnected(connected);
-        
-        if (connected) {
-          await loadDataFromDb();
-        } else {
-          loadDataFromLocalStorage();
+        // Carrega a configuração do widget
+        const widgetConfigData = await fetchWidgetConfig();
+        if (widgetConfigData) {
+          setWidgetConfig(widgetConfigData);
         }
-        
-        setIsLoading(false);
+
+        // Carrega a configuração do agente
+        const agentConfigData = await fetchAgentConfig();
+        if (agentConfigData) {
+          // Certifique-se de que as datas nas trainingFiles são objetos Date
+          if (agentConfigData.trainingFiles) {
+            agentConfigData.trainingFiles = agentConfigData.trainingFiles.map((file) => ({
+              ...file,
+              timestamp: new Date(file.timestamp),
+            }));
+          }
+          setAgentConfig(agentConfigData);
+        }
       } catch (error) {
-        console.error("Error initializing database:", error);
-        setIsDbConnected(false);
-        loadDataFromLocalStorage();
-        setIsLoading(false);
+        console.error("Erro ao carregar configurações:", error);
       }
     };
-    
-    initializeDb();
+
+    loadConfig();
   }, []);
 
-  const loadDataFromDb = async () => {
-    try {
-      const widgetConfigData = await db.getWidgetConfig();
-      if (widgetConfigData) {
-        setWidgetConfig(widgetConfigData as WidgetConfig);
-      }
-      
-      const agentConfigData = await db.getAgentConfig();
-      if (agentConfigData) {
-        const trainingFiles = agentConfigData.trainingFiles || [];
-        const parsedTrainingFiles = trainingFiles.map((file: any) => ({
-          ...file,
-          timestamp: new Date(file.timestamp)
-        }));
-        
-        setAgentConfig({
-          ...defaultAgentConfig,
-          ...agentConfigData,
-          trainingFiles: parsedTrainingFiles,
-          model: agentConfigData.model || defaultAgentConfig.model,
-          maxTokens: agentConfigData.maxTokens || defaultAgentConfig.maxTokens,
-          temperature: agentConfigData.temperature || defaultAgentConfig.temperature,
-          detectEmotion: agentConfigData.detectEmotion || defaultAgentConfig.detectEmotion,
-        } as AgentConfig);
-      }
-      
-      const adminConfigData = await db.getAdminConfig();
-      if (adminConfigData) {
-        setAdminConfig(adminConfigData as AdminConfig);
-      }
-      
-      const conversationsData = await db.getConversations();
-      if (conversationsData && conversationsData.length > 0) {
-        const parsedConversations = conversationsData.map((conv: any) => ({
-          ...conv,
-          createdAt: new Date(conv.createdAt),
-          messages: conv.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
-        }));
-        setConversations(parsedConversations);
-      }
-    } catch (error) {
-      console.error("Error loading data from database:", error);
-      toast.error("Failed to load data from database. Using local storage as fallback.");
-      loadDataFromLocalStorage();
-    }
-  };
-
-  const loadDataFromLocalStorage = () => {
-    const storedWidgetConfig = localStorage.getItem("widgetConfig");
-    const storedAgentConfig = localStorage.getItem("agentConfig");
-    const storedAdminConfig = localStorage.getItem("adminConfig");
-    const storedConversations = localStorage.getItem("conversations");
-
-    if (storedWidgetConfig) setWidgetConfig(JSON.parse(storedWidgetConfig));
-    if (storedAgentConfig) {
-      const parsedConfig = JSON.parse(storedAgentConfig);
-      setAgentConfig({
-        ...defaultAgentConfig,
-        ...parsedConfig,
-        model: parsedConfig.model || defaultAgentConfig.model,
-        maxTokens: parsedConfig.maxTokens || defaultAgentConfig.maxTokens,
-        temperature: parsedConfig.temperature || defaultAgentConfig.temperature,
-        detectEmotion: parsedConfig.detectEmotion || defaultAgentConfig.detectEmotion,
-      });
-    }
-    if (storedAdminConfig) setAdminConfig(JSON.parse(storedAdminConfig));
-    if (storedConversations) {
-      const parsedConversations = JSON.parse(storedConversations);
-      const conversationsWithDates = parsedConversations.map((conv: any) => ({
-        ...conv,
-        createdAt: new Date(conv.createdAt),
-        messages: conv.messages.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        })),
-      }));
-      setConversations(conversationsWithDates);
-    }
-  };
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (isDbConnected) {
-        db.updateWidgetConfig(widgetConfig);
-      } else {
-        localStorage.setItem("widgetConfig", JSON.stringify(widgetConfig));
-      }
-    }
-  }, [widgetConfig, isDbConnected, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (isDbConnected) {
-        db.updateAgentConfig(agentConfig);
-      } else {
-        localStorage.setItem("agentConfig", JSON.stringify(agentConfig));
-      }
-    }
-  }, [agentConfig, isDbConnected, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      if (isDbConnected) {
-        db.updateAdminConfig(adminConfig);
-      } else {
-        localStorage.setItem("adminConfig", JSON.stringify(adminConfig));
-      }
-    }
-  }, [adminConfig, isDbConnected, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading && !isDbConnected) {
-      const conversationsForStorage = conversations.map(conv => ({
-        ...conv,
-        messages: conv.messages.map(msg => ({
-          ...msg,
-        })),
-      }));
-      localStorage.setItem("conversations", JSON.stringify(conversationsForStorage));
-    }
-  }, [conversations, isDbConnected, isLoading]);
-
-  const startNewConversation = useCallback(() => {
-    const newId = uuidv4();
-    const newConversation: Conversation = {
-      id: newId,
-      messages: [],
-      isActive: true,
-      createdAt: new Date(),
-    };
-    
-    setConversations(prev => [...prev, newConversation]);
-    setCurrentConversationId(newId);
-    
-    if (isDbConnected) {
-      db.createConversation(newId);
-    }
-    
-    return newId;
-  }, [isDbConnected]);
-
-  const switchConversation = useCallback((id: string) => {
-    if (conversations.some(conv => conv.id === id)) {
-      setCurrentConversationId(id);
-    }
-  }, [conversations]);
-
-  const addMessage = useCallback((content: string, role: "user" | "assistant" | "system") => {
-    if (!currentConversationId) {
-      const newId = startNewConversation();
-      setCurrentConversationId(newId);
-    }
-    
+  // Adicionar uma mensagem
+  const addMessage = useCallback((content: string, role: "user" | "assistant" | "system"): string => {
+    const id = uuidv4();
     const newMessage: Message = {
-      id: uuidv4(),
+      id,
       role,
       content,
       timestamp: new Date(),
     };
-    
-    setConversations(prev => 
-      prev.map(conv => 
-        conv.id === currentConversationId 
-          ? { ...conv, messages: [...conv.messages, newMessage] } 
-          : conv
+
+    setMessages((prevMessages) => [...prevMessages, newMessage]);
+    return id;
+  }, []);
+
+  // Atualizar uma mensagem existente
+  const updateMessage = useCallback((id: string, content: string) => {
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) =>
+        msg.id === id ? { ...msg, content } : msg
       )
     );
-    
-    if (isDbConnected && currentConversationId) {
-      db.addMessage(currentConversationId, newMessage);
-    }
-  }, [currentConversationId, startNewConversation, isDbConnected]);
-
-  const updateWidgetConfig = useCallback((config: Partial<WidgetConfig>) => {
-    setWidgetConfig(prev => {
-      const newConfig = { ...prev, ...config };
-      return newConfig;
-    });
   }, []);
 
-  const updateAgentConfig = useCallback((config: Partial<AgentConfig>) => {
-    setAgentConfig(prev => ({ ...prev, ...config }));
+  // Limpar todas as mensagens
+  const clearMessages = useCallback(() => {
+    setMessages([]);
   }, []);
 
-  const updateAdminConfig = useCallback((config: Partial<AdminConfig>) => {
-    setAdminConfig(prev => ({ ...prev, ...config }));
-  }, []);
+  // Iniciar uma nova conversa
+  const startNewConversation = useCallback(() => {
+    clearMessages();
+  }, [clearMessages]);
 
-  const addTrainingFile = useCallback(async (file: File): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = async (event) => {
-        if (event.target && event.target.result) {
-          const newFile: TrainingFile = {
-            id: uuidv4(),
-            name: file.name,
-            content: event.target.result as string,
-            size: file.size,
-            type: file.type,
-            timestamp: new Date(),
-          };
-          
-          setAgentConfig(prev => ({
-            ...prev,
-            trainingFiles: [...prev.trainingFiles, newFile],
-          }));
-          
-          if (isDbConnected) {
-            try {
-              await db.addTrainingFile(newFile);
-            } catch (error) {
-              console.error('Error saving training file to database:', error);
-            }
-          }
-          
-          resolve();
-        } else {
-          reject(new Error("Failed to read file"));
-        }
-      };
-      
-      reader.onerror = () => {
-        reject(new Error("Error reading file"));
-      };
-      
-      reader.readAsText(file);
-    });
-  }, [isDbConnected]);
-
-  const removeTrainingFile = useCallback((id: string) => {
-    setAgentConfig(prev => ({
+  // Adicionar um arquivo de treinamento
+  const addTrainingFile = useCallback((file: TrainingFile) => {
+    setAgentConfig((prev) => ({
       ...prev,
-      trainingFiles: prev.trainingFiles.filter(file => file.id !== id),
+      trainingFiles: [...prev.trainingFiles, file],
     }));
-    
-    if (isDbConnected) {
-      db.removeTrainingFile(id)
-        .catch(error => console.error('Error removing training file from database:', error));
-    }
-  }, [isDbConnected]);
+  }, []);
 
-  const messages = currentConversationId 
-    ? conversations.find(conv => conv.id === currentConversationId)?.messages || []
-    : [];
+  // Remover um arquivo de treinamento
+  const removeTrainingFile = useCallback((id: string) => {
+    setAgentConfig((prev) => ({
+      ...prev,
+      trainingFiles: prev.trainingFiles.filter((file) => file.id !== id),
+    }));
+  }, []);
 
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  const value = {
-    conversations,
-    currentConversationId,
+  // Valor do contexto
+  const contextValue: ChatContextType = {
     isWidgetOpen,
-    isVoiceChatActive,
-    widgetConfig,
-    agentConfig,
-    adminConfig,
-    messages,
     setIsWidgetOpen,
+    isVoiceChatActive,
     setIsVoiceChatActive,
-    startNewConversation,
-    switchConversation,
+    messages,
     addMessage,
-    updateWidgetConfig,
-    updateAgentConfig,
-    updateAdminConfig,
+    updateMessage,
+    clearMessages,
+    startNewConversation,
+    widgetConfig,
+    setWidgetConfig,
+    agentConfig,
+    setAgentConfig,
     addTrainingFile,
     removeTrainingFile,
     isDbConnected,
+    setIsDbConnected,
   };
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
-};
-
-export const useChat = () => {
-  const context = useContext(ChatContext);
-  if (context === undefined) {
-    throw new Error("useChat must be used within a ChatProvider");
-  }
-  return context;
+  return <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>;
 };

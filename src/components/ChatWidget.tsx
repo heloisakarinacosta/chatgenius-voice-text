@@ -26,16 +26,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     messages,
     addMessage,
     startNewConversation,
+    updateMessage,
   } = useChat();
   
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [position, setPosition] = useState<string>("");
+  const [streamStartTime, setStreamStartTime] = useState<number | null>(null);
 
   useEffect(() => {
     const posMap: Record<string, string> = {
@@ -114,6 +117,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setInputValue("");
     addMessage(userMessage, "user");
     setIsProcessing(true);
+    setIsTyping(true);
     
     await new Promise(resolve => setTimeout(resolve, 100));
     
@@ -130,13 +134,39 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       console.log("Enviando mensagem para OpenAI", conversationHistory);
       console.log("Arquivos de treinamento disponíveis:", agentConfig.trainingFiles.length);
       
+      const assistantMessageId = addMessage("", "assistant");
       let assistantMessage = "";
+      let responseTimeout: NodeJS.Timeout | null = null;
+      
+      responseTimeout = setTimeout(() => {
+        if (assistantMessage.trim() === "") {
+          console.warn("Nenhuma resposta recebida após 15 segundos");
+          updateMessage(assistantMessageId, "Desculpe, estou demorando mais do que o esperado para responder. Por favor, aguarde...");
+        }
+      }, 15000);
+      
+      const failureTimeout = setTimeout(() => {
+        if (assistantMessage.trim() === "" || assistantMessage.includes("Desculpe, estou demorando mais")) {
+          console.error("Tempo limite excedido esperando resposta da OpenAI");
+          updateMessage(
+            assistantMessageId, 
+            "Desculpe, não consegui obter uma resposta. Verifique sua conexão com a internet ou tente novamente mais tarde."
+          );
+          setIsTyping(false);
+          setIsProcessing(false);
+          toast.error("Tempo limite excedido", {
+            description: "Não foi possível obter uma resposta no tempo esperado.",
+          });
+        }
+      }, 60000);
+      
+      setStreamStartTime(Date.now());
       
       const streamOptions: any = {
         messages: conversationHistory,
-        model: agentConfig.model,
-        temperature: agentConfig.temperature,
-        max_tokens: agentConfig.maxTokens,
+        model: agentConfig.model || "gpt-4o-mini",
+        temperature: agentConfig.temperature || 0.7,
+        max_tokens: agentConfig.maxTokens || 1024,
         stream: true,
         trainingFiles: agentConfig.trainingFiles,
         detectEmotion: agentConfig.detectEmotion
@@ -150,32 +180,54 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         }));
       }
       
-      addMessage("", "assistant");
-      
       await streamOpenAI(
         streamOptions,
         apiKey,
         {
           onMessage: (chunk) => {
-            assistantMessage += chunk;
-            
-            const updatedMessages = [...messages];
-            if (updatedMessages.length > 0) {
-              const lastAssistantMessageIndex = updatedMessages.findIndex(
-                msg => msg.role === "assistant"
-              );
-              
-              if (lastAssistantMessageIndex !== -1) {
-                const lastMessage = updatedMessages[lastAssistantMessageIndex];
-                lastMessage.content = assistantMessage;
+            if (assistantMessage === "" && chunk.trim() !== "") {
+              if (responseTimeout) {
+                clearTimeout(responseTimeout);
+                responseTimeout = null;
               }
+            }
+            
+            assistantMessage += chunk;
+            updateMessage(assistantMessageId, assistantMessage);
+            
+            if (typingTimeout) {
+              clearTimeout(typingTimeout);
+            }
+            
+            if (streamStartTime) {
+              const timeElapsed = Date.now() - streamStartTime;
+              console.log(`Chunk recebido após ${timeElapsed}ms:`, chunk);
             }
           },
           onComplete: async (fullMessage) => {
+            if (responseTimeout) {
+              clearTimeout(responseTimeout);
+            }
+            if (failureTimeout) {
+              clearTimeout(failureTimeout);
+            }
+            
             setIsTyping(false);
             
-            if (!assistantMessage) {
-              console.log("A mensagem completa foi recebida, mas sem chunks", fullMessage);
+            if (streamStartTime) {
+              const totalTime = Date.now() - streamStartTime;
+              console.log(`Stream completo em ${totalTime}ms`);
+              setStreamStartTime(null);
+            }
+            
+            if (!fullMessage || fullMessage.trim() === "") {
+              console.warn("Mensagem completa recebida, mas está vazia");
+              updateMessage(
+                assistantMessageId, 
+                "Desculpe, não consegui gerar uma resposta. Por favor, tente novamente."
+              );
+            } else {
+              console.log("Mensagem completa recebida com sucesso");
             }
             
             if (agentConfig.voice.enabled && isVoiceChatActive) {
@@ -231,6 +283,13 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             setIsProcessing(false);
           },
           onError: (error) => {
+            if (responseTimeout) {
+              clearTimeout(responseTimeout);
+            }
+            if (failureTimeout) {
+              clearTimeout(failureTimeout);
+            }
+            
             setIsTyping(false);
             console.error("Erro na resposta da IA:", error);
             
@@ -261,7 +320,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               };
             }
             
-            addMessage(errorMessage, "assistant");
+            updateMessage(assistantMessageId, errorMessage);
             
             toast.error(errorMessage, {
               description: errorDescription,
