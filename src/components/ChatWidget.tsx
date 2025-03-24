@@ -167,7 +167,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             
             if (agentConfig.voice.enabled && isVoiceChatActive) {
               try {
-                console.log("Voice active, generating speech...");
+                console.log("Voz ativa, gerando áudio...");
                 const audioBuffer = await generateSpeech(
                   fullMessage,
                   agentConfig.voice.voiceId,
@@ -184,7 +184,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                   
                   audioRef.current.src = audioUrl;
                   audioRef.current.play().catch(error => {
-                    console.error("Error playing audio:", error);
+                    console.error("Erro ao reproduzir áudio:", error);
                     toast.error("Erro ao reproduzir áudio", {
                       description: "Seu navegador bloqueou a reprodução automática. Clique para ouvir a resposta.",
                       action: {
@@ -195,7 +195,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                   });
                 }
               } catch (error) {
-                console.error("Error generating speech:", error);
+                console.error("Erro ao gerar fala:", error);
                 let errorMessage = "Não foi possível gerar a fala. Por favor, verifique suas configurações.";
                 let errorDescription = "";
                 
@@ -219,7 +219,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
           },
           onError: (error) => {
             setIsTyping(false);
-            console.error("Error in AI response:", error);
+            console.error("Erro na resposta da IA:", error);
             
             let errorMessage = "Desculpe, encontrei um erro ao processar sua solicitação. Por favor, tente novamente.";
             let errorDescription = "";
@@ -262,7 +262,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       );
     } catch (error) {
       setIsTyping(false);
-      console.error("Error sending message:", error);
+      console.error("Erro ao enviar mensagem:", error);
       addMessage("Desculpe, encontrei um erro ao processar sua solicitação. Por favor, tente novamente.", "assistant");
       setIsProcessing(false);
       toast.error("Erro ao processar sua mensagem. Por favor, tente novamente.");

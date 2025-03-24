@@ -20,14 +20,14 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Initialize media recorder
+  // Inicializar gravador de mídia
   const startRecording = async () => {
     try {
-      console.log("Requesting microphone access...");
+      console.log("Solicitando acesso ao microfone...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       
-      console.log("Microphone access granted, creating MediaRecorder");
+      console.log("Acesso ao microfone concedido, criando MediaRecorder");
       const mediaRecorder = new MediaRecorder(stream);
       
       mediaRecorderRef.current = mediaRecorder;
@@ -41,29 +41,29 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       
       mediaRecorder.onstop = async () => {
         if (audioChunksRef.current.length === 0) {
-          console.log("No audio recorded");
+          console.log("Nenhum áudio gravado");
           return;
         }
         
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        console.log(`Audio recorded: ${audioBlob.size} bytes`);
+        console.log(`Áudio gravado: ${audioBlob.size} bytes`);
         
         try {
           setIsTranscribing(true);
-          console.log("Transcribing audio...");
+          console.log("Transcrevendo áudio...");
           const transcript = await transcribeAudio(audioBlob, apiKey);
           setIsTranscribing(false);
           
           if (transcript) {
-            console.log(`Transcription: "${transcript}"`);
+            console.log(`Transcrição: "${transcript}"`);
             addMessage(transcript, "user");
           } else {
-            console.error("Empty transcript received");
+            console.error("Transcrição vazia recebida");
             toast.error("Não foi possível transcrever sua mensagem. Por favor, tente novamente.");
           }
         } catch (error) {
           setIsTranscribing(false);
-          console.error("Transcription error:", error);
+          console.error("Erro de transcrição:", error);
           
           let errorMessage = "Erro ao transcrever áudio. Por favor, tente novamente.";
           let errorDescription = "";
@@ -83,7 +83,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           });
         }
         
-        // Clear recording time and chunks
+        // Limpar tempo de gravação e chunks
         setRecordingTime(0);
         audioChunksRef.current = [];
       };
@@ -91,12 +91,12 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       mediaRecorder.start();
       setIsRecording(true);
       
-      // Start recording timer
+      // Iniciar timer de gravação
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error("Error accessing microphone:", error);
+      console.error("Erro ao acessar microfone:", error);
       
       let errorMessage = "Não foi possível acessar seu microfone. Por favor, verifique as permissões.";
       let description = "";
@@ -119,13 +119,13 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      console.log("Stopping recording");
+      console.log("Parando a gravação");
       mediaRecorderRef.current.stop();
       
-      // Stop all tracks in the stream
+      // Parar todas as pistas no stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => {
-          console.log(`Stopping track: ${track.kind}`);
+          console.log(`Parando faixa: ${track.kind}`);
           track.stop();
         });
         streamRef.current = null;
@@ -133,7 +133,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       
       setIsRecording(false);
       
-      // Clear the timer
+      // Limpar o timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -141,7 +141,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Toggle voice chat
+  // Alternar chat por voz
   const toggleVoiceChat = () => {
     if (isVoiceChatActive) {
       setIsVoiceChatActive(false);
@@ -153,7 +153,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     }
   };
 
-  // Switch to text mode
+  // Mudar para modo texto
   const switchToTextMode = () => {
     if (isRecording) {
       stopRecording();
@@ -161,14 +161,14 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     setIsVoiceChatActive(false);
   };
 
-  // Format recording time
+  // Formatar tempo de gravação
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Clean up on unmount
+  // Limpar ao desmontar
   useEffect(() => {
     return () => {
       if (timerRef.current) {

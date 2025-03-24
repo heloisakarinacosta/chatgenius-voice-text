@@ -86,19 +86,19 @@ const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 const defaultWidgetConfig: WidgetConfig = {
   position: "bottom-right",
-  title: "Chat Assistant",
-  subtitle: "How can I help you today?",
+  title: "Assistente de Chat",
+  subtitle: "Como posso ajudar você hoje?",
   primaryColor: "#000000",
   iconType: "chat",
 };
 
 const defaultAgentConfig: AgentConfig = {
-  systemPrompt: "You are a helpful assistant. Provide clear and concise information to the user's queries.",
+  systemPrompt: "Você é um assistente útil e prestativo. Forneça informações claras e concisas para as perguntas do usuário. Responda sempre em português do Brasil.",
   functions: [],
   voice: {
     enabled: true,
-    voiceId: "alloy", // Default OpenAI voice
-    language: "en-US",
+    voiceId: "nova", // Voz mais natural para português
+    language: "pt-BR",
     latency: 100,
   },
   trainingFiles: [],

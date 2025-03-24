@@ -30,31 +30,31 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
 }) => {
   const [updatedAgentConfig, setUpdatedAgentConfig] = useState<AgentConfig>({ ...agentConfig });
 
-  // Voice options from OpenAI
+  // Opções de voz da OpenAI
   const voiceOptions = [
     { id: "alloy", name: "Alloy" },
     { id: "echo", name: "Echo" },
     { id: "fable", name: "Fable" },
     { id: "onyx", name: "Onyx" },
-    { id: "nova", name: "Nova" },
+    { id: "nova", name: "Nova (Recomendada para Português)" },
     { id: "shimmer", name: "Shimmer" },
   ];
   
-  // Language options
+  // Opções de idioma
   const languageOptions = [
-    { id: "en-US", name: "English (US)" },
-    { id: "en-GB", name: "English (UK)" },
-    { id: "es-ES", name: "Spanish" },
-    { id: "fr-FR", name: "French" },
-    { id: "de-DE", name: "German" },
-    { id: "it-IT", name: "Italian" },
-    { id: "ja-JP", name: "Japanese" },
-    { id: "ko-KR", name: "Korean" },
-    { id: "pt-BR", name: "Portuguese (Brazil)" },
-    { id: "zh-CN", name: "Chinese (Simplified)" },
+    { id: "pt-BR", name: "Português (Brasil)" },
+    { id: "en-US", name: "Inglês (EUA)" },
+    { id: "en-GB", name: "Inglês (Reino Unido)" },
+    { id: "es-ES", name: "Espanhol" },
+    { id: "fr-FR", name: "Francês" },
+    { id: "de-DE", name: "Alemão" },
+    { id: "it-IT", name: "Italiano" },
+    { id: "ja-JP", name: "Japonês" },
+    { id: "ko-KR", name: "Coreano" },
+    { id: "zh-CN", name: "Chinês (Simplificado)" },
   ];
 
-  // Save agent configuration
+  // Salvar configuração do agente
   const saveAgentConfig = () => {
     const updatedConfig = {
       ...updatedAgentConfig,
@@ -62,20 +62,20 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
     };
     
     updateAgentConfig(updatedConfig);
-    toast.success("Agent configuration saved");
+    toast.success("Configuração do agente salva");
   };
 
-  // Test voice latency
+  // Testar latência da voz
   const testVoiceLatency = async () => {
     const startTime = Date.now();
-    toast.info("Testing voice latency...");
+    toast.info("Testando latência da voz...");
     
-    // Simulate a network request
+    // Simular uma requisição de rede
     await new Promise(resolve => setTimeout(resolve, 800));
     
     const latency = Date.now() - startTime;
     
-    // Update agent config with measured latency
+    // Atualizar configuração do agente com latência medida
     setUpdatedAgentConfig({
       ...updatedAgentConfig,
       voice: {
@@ -84,21 +84,21 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
       },
     });
     
-    toast.success(`Voice latency: ${latency}ms`);
+    toast.success(`Latência da voz: ${latency}ms`);
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Agent Configuration</CardTitle>
+        <CardTitle>Configuração do Agente</CardTitle>
         <CardDescription>
-          Configure your AI assistant's behavior and voice settings.
+          Configure o comportamento e as configurações de voz do seu assistente IA.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Label htmlFor="systemPrompt">System Prompt</Label>
+            <Label htmlFor="systemPrompt">Prompt do Sistema</Label>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -120,7 +120,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
               systemPrompt: e.target.value,
             })}
             rows={6}
-            placeholder="You are a helpful assistant..."
+            placeholder="Você é um assistente prestativo..."
           />
           <p className="text-sm text-muted-foreground">
             Este é o prompt de sistema que define o comportamento e conhecimento do seu assistente AI.
@@ -132,12 +132,12 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Mic className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-medium">Voice Configuration</h3>
+            <h3 className="text-lg font-medium">Configuração de Voz</h3>
           </div>
           
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label htmlFor="voiceEnabled" className="font-medium">Voice Enabled</Label>
+              <Label htmlFor="voiceEnabled" className="font-medium">Voz Ativada</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -172,7 +172,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
           <div className="space-y-4 border p-4 rounded-lg bg-secondary/20">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="voiceId">Voice</Label>
+                <Label htmlFor="voiceId">Voz</Label>
                 <div className="flex items-center gap-2">
                   <Select
                     value={updatedAgentConfig.voice.voiceId}
@@ -185,7 +185,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
                     })}
                   >
                     <SelectTrigger id="voiceId" className="flex-1">
-                      <SelectValue placeholder="Select voice" />
+                      <SelectValue placeholder="Selecione a voz" />
                     </SelectTrigger>
                     <SelectContent>
                       {voiceOptions.map((voice) => (
@@ -214,7 +214,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="language">Language</Label>
+                <Label htmlFor="language">Idioma</Label>
                 <Select
                   value={updatedAgentConfig.voice.language}
                   onValueChange={(value) => setUpdatedAgentConfig({
@@ -226,7 +226,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
                   })}
                 >
                   <SelectTrigger id="language">
-                    <SelectValue placeholder="Select language" />
+                    <SelectValue placeholder="Selecione o idioma" />
                   </SelectTrigger>
                   <SelectContent>
                     {languageOptions.map((language) => (
@@ -241,14 +241,14 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
             
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Voice Latency</Label>
+                <Label>Latência da Voz</Label>
                 <div className="flex items-center gap-2">
                   <Volume2 className="h-4 w-4 text-muted-foreground" />
                   <span className="font-mono">{updatedAgentConfig.voice.latency || 0}ms</span>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Measured response time for voice generation.
+                Tempo de resposta medido para geração de voz.
               </p>
             </div>
 
@@ -284,7 +284,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
         </div>
       </CardContent>
       <CardFooter>
-        <Button onClick={saveAgentConfig}>Save Changes</Button>
+        <Button onClick={saveAgentConfig}>Salvar Alterações</Button>
       </CardFooter>
     </Card>
   );
