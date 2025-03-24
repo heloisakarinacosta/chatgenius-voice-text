@@ -58,7 +58,8 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
 
   // Opções de modelos da OpenAI
   const modelOptions = [
-    { id: "gpt-4o-mini", name: "GPT-4o Mini - Rápido e econômico" },
+    { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo - Rápido e econômico" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini - Melhor equilíbrio" },
     { id: "gpt-4o", name: "GPT-4o - Mais poderoso" },
   ];
 
@@ -379,7 +380,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {updatedAgentConfig.trainingFiles.length > 0 
-              ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s). Acesse a aba "Arquivos" para gerenciar.`
+              ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s) e ativos para conhecimento personalizado.`
               : 'Nenhum arquivo carregado. Acesse a aba "Arquivos" para adicionar arquivos de treinamento.'}
           </p>
           <div className="mt-2">

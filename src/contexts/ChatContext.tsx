@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useContext, useCallback, useEffect, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as db from "../services/databaseService";
@@ -34,6 +33,13 @@ export interface TrainingFile {
   timestamp: Date;
 }
 
+export interface AgentFunction {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+  webhook: string;
+}
+
 export interface AgentConfig {
   systemPrompt: string;
   functions: AgentFunction[];
@@ -43,13 +49,6 @@ export interface AgentConfig {
   maxTokens: number;
   temperature: number;
   detectEmotion: boolean;
-}
-
-export interface AgentFunction {
-  name: string;
-  description: string;
-  parameters: Record<string, any>;
-  webhook: string;
 }
 
 export interface WidgetConfig {
@@ -162,7 +161,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const agentConfigData = await db.getAgentConfig();
       if (agentConfigData) {
-        // Ensure new fields are properly initialized
         setAgentConfig({
           ...defaultAgentConfig,
           ...agentConfigData,
@@ -198,7 +196,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (storedWidgetConfig) setWidgetConfig(JSON.parse(storedWidgetConfig));
     if (storedAgentConfig) {
       const parsedConfig = JSON.parse(storedAgentConfig);
-      // Ensure new fields are properly initialized
       setAgentConfig({
         ...defaultAgentConfig,
         ...parsedConfig,

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { callOpenAI, streamOpenAI, generateSpeech, OpenAIMessage } from "@/utils/openai";
 import ChatBubble from "./ChatBubble";
 import VoiceChat from "./VoiceChat";
+import VoiceChatAgent from "./VoiceChatAgent";
 import { toast } from "sonner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Link } from "react-router-dom";
@@ -114,7 +115,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setInputValue("");
     addMessage(userMessage, "user");
     setIsProcessing(true);
-    setIsTyping(true);
     
     await new Promise(resolve => setTimeout(resolve, 100));
     
@@ -135,8 +135,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       
       const streamOptions: any = {
         messages: conversationHistory,
+        model: agentConfig.model,
+        temperature: agentConfig.temperature,
+        max_tokens: agentConfig.maxTokens,
         stream: true,
         trainingFiles: agentConfig.trainingFiles,
+        detectEmotion: agentConfig.detectEmotion
       };
       
       if (agentConfig.functions && agentConfig.functions.length > 0) {
@@ -365,7 +369,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 <Button>Configurar API Key</Button>
               </Link>
             </div>
-          ) : messages.length === 0 ? (
+          ) : messages.length ===
+           0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <MessageCircle className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
               <h3 className="text-lg font-medium">Como posso ajudar você hoje?</h3>
@@ -405,7 +410,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
 
         <div className="p-4 border-t">
           {isVoiceChatActive ? (
-            <VoiceChat apiKey={apiKey} />
+            <VoiceChatAgent apiKey={apiKey} />
           ) : (
             <div className="flex gap-2">
               <Input

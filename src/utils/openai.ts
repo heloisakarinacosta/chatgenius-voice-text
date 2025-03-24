@@ -1,3 +1,4 @@
+
 export interface OpenAIMessage {
   role: "user" | "assistant" | "system";
   content: string;
@@ -162,11 +163,20 @@ export async function streamOpenAI(
       }
     }
 
+    // Add emotion detection directive if enabled
+    if (options.detectEmotion) {
+      messages.push({
+        role: "system",
+        content: "Por favor, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
+      });
+    }
+
     const requestBody: any = {
       model: options.model || "gpt-4o-mini",
       messages: messages,
       temperature: options.temperature || 0.7,
       stream: true,
+      max_tokens: options.max_tokens || 1024,
     };
 
     // Only include functions if they exist and are not empty
@@ -177,7 +187,8 @@ export async function streamOpenAI(
     console.log("Enviando streaming para OpenAI API:", {
       ...requestBody,
       messages: `${requestBody.messages.length} mensagens`,
-      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0
+      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0,
+      detectEmotion: options.detectEmotion
     });
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {

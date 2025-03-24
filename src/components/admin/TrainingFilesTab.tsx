@@ -133,7 +133,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               {trainingFiles.length > 0 && (
                 <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full text-xs">
                   <CheckCircle2 className="h-3 w-3" />
-                  <span>Ativos</span>
+                  <span>Ativos e Usados em Cada Pergunta</span>
                 </div>
               )}
             </div>
@@ -200,6 +200,16 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         </div>
         
         <div className="flex flex-col gap-2">
+          {trainingFiles.length > 0 && (
+            <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/50 text-green-900 dark:text-green-300 rounded-md">
+              <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
+              <div className="text-sm">
+                <p><strong>{trainingFiles.length} arquivos</strong> estão ativos e sendo enviados com cada mensagem do usuário para o assistente.</p>
+                <p className="mt-1">O conteúdo destes arquivos está sendo utilizado como conhecimento personalizado para melhorar as respostas.</p>
+              </div>
+            </div>
+          )}
+          
           <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 rounded-md">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <div className="text-sm">
@@ -207,23 +217,13 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               <p className="mt-1">Conteúdo sensível não deve ser enviado, pois será usado para treinamento.</p>
             </div>
           </div>
-          
-          {trainingFiles.length > 0 && (
-            <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/50 text-green-900 dark:text-green-300 rounded-md">
-              <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
-              <div className="text-sm">
-                <p><strong>{trainingFiles.length} arquivos</strong> estão sendo utilizados para fornecer conhecimento ao seu assistente.</p>
-                <p className="mt-1">O conteúdo destes arquivos será enviado junto com cada pergunta do usuário.</p>
-              </div>
-            </div>
-          )}
         </div>
       </CardContent>
       <CardFooter className="border-t pt-4">
         <div className="space-y-1 w-full">
           <h4 className="text-sm font-medium">Como os arquivos são utilizados?</h4>
           <p className="text-sm text-muted-foreground">
-            Os conteúdos dos arquivos são enviados à OpenAI como contexto adicional, 
+            Os conteúdos dos arquivos são enviados à OpenAI como contexto adicional em cada pergunta, 
             permitindo que o assistente responda com base nesses dados específicos.
           </p>
         </div>
