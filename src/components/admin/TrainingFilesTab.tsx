@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrainingFile } from "@/contexts/ChatContext";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { File, FileUp, Trash2, FileText, AlertCircle } from "lucide-react";
+import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -128,7 +128,15 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label>Arquivos Carregados ({trainingFiles.length})</Label>
+            <div className="flex items-center gap-2">
+              <Label>Arquivos Carregados ({trainingFiles.length})</Label>
+              {trainingFiles.length > 0 && (
+                <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full text-xs">
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span>Ativos</span>
+                </div>
+              )}
+            </div>
             {trainingFiles.length > 0 && (
               <p className="text-xs text-muted-foreground">Clique em um arquivo para ver o conteúdo</p>
             )}
@@ -191,12 +199,24 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
           )}
         </div>
         
-        <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 rounded-md">
-          <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          <div className="text-sm">
-            <p>Estes arquivos são usados para melhorar o conhecimento do seu assistente AI.</p>
-            <p className="mt-1">Conteúdo sensível não deve ser enviado, pois será usado para treinamento.</p>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 rounded-md">
+            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            <div className="text-sm">
+              <p>Estes arquivos são usados para melhorar o conhecimento do seu assistente AI.</p>
+              <p className="mt-1">Conteúdo sensível não deve ser enviado, pois será usado para treinamento.</p>
+            </div>
           </div>
+          
+          {trainingFiles.length > 0 && (
+            <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/50 text-green-900 dark:text-green-300 rounded-md">
+              <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
+              <div className="text-sm">
+                <p><strong>{trainingFiles.length} arquivos</strong> estão sendo utilizados para fornecer conhecimento ao seu assistente.</p>
+                <p className="mt-1">O conteúdo destes arquivos será enviado junto com cada pergunta do usuário.</p>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
       <CardFooter className="border-t pt-4">

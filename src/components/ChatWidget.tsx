@@ -129,11 +129,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     
     try {
       console.log("Enviando mensagem para OpenAI", conversationHistory);
+      console.log("Arquivos de treinamento disponíveis:", agentConfig.trainingFiles.length);
+      
       let assistantMessage = "";
       
       const streamOptions: any = {
         messages: conversationHistory,
         stream: true,
+        trainingFiles: agentConfig.trainingFiles,
       };
       
       if (agentConfig.functions && agentConfig.functions.length > 0) {

@@ -16,6 +16,14 @@ export interface OpenAICompletionOptions {
   temperature?: number;
   functions?: OpenAIFunction[];
   stream?: boolean;
+  trainingFiles?: Array<{
+    id: string;
+    name: string;
+    content: string;
+    size: number;
+    type: string;
+    timestamp: Date;
+  }>;
 }
 
 export interface StreamCallbacks {
@@ -30,9 +38,33 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
   }
 
   try {
+    // Prepare messages with training files if available
+    let messages = [...options.messages];
+    
+    // Add training files as context if they exist
+    if (options.trainingFiles && options.trainingFiles.length > 0) {
+      // Create a context message with all training files content
+      const trainingContent = options.trainingFiles.map(file => {
+        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
+      }).join("\n");
+      
+      // Insert the training content after the system message
+      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+      if (systemMessageIndex !== -1) {
+        // Append to existing system message
+        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
+      } else {
+        // Add as a new system message if no system message exists
+        messages.unshift({
+          role: "system",
+          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
+        });
+      }
+    }
+
     const requestBody: any = {
       model: options.model || "gpt-4o-mini",
-      messages: options.messages,
+      messages: messages,
       temperature: options.temperature || 0.7,
       stream: options.stream || false,
     };
@@ -44,7 +76,8 @@ export async function callOpenAI(options: OpenAICompletionOptions, apiKey: strin
 
     console.log("Enviando requisição para OpenAI API:", {
       ...requestBody,
-      messages: `${requestBody.messages.length} mensagens`
+      messages: `${requestBody.messages.length} mensagens`,
+      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0
     });
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -88,9 +121,33 @@ export async function streamOpenAI(
   }
 
   try {
+    // Prepare messages with training files if available
+    let messages = [...options.messages];
+    
+    // Add training files as context if they exist
+    if (options.trainingFiles && options.trainingFiles.length > 0) {
+      // Create a context message with all training files content
+      const trainingContent = options.trainingFiles.map(file => {
+        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
+      }).join("\n");
+      
+      // Insert the training content after the system message
+      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+      if (systemMessageIndex !== -1) {
+        // Append to existing system message
+        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
+      } else {
+        // Add as a new system message if no system message exists
+        messages.unshift({
+          role: "system",
+          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
+        });
+      }
+    }
+
     const requestBody: any = {
       model: options.model || "gpt-4o-mini",
-      messages: options.messages,
+      messages: messages,
       temperature: options.temperature || 0.7,
       stream: true,
     };
@@ -102,7 +159,8 @@ export async function streamOpenAI(
 
     console.log("Enviando streaming para OpenAI API:", {
       ...requestBody,
-      messages: `${requestBody.messages.length} mensagens`
+      messages: `${requestBody.messages.length} mensagens`,
+      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0
     });
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
