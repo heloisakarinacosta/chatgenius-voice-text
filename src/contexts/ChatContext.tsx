@@ -1,9 +1,9 @@
 
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
-import { fetchWidgetConfig, fetchAgentConfig } from "@/services/databaseService";
+import { getWidgetConfig, getAgentConfig, updateWidgetConfig, updateAgentConfig, getAdminConfig, updateAdminConfig, isConnected } from "@/services/databaseService";
 import { v4 as uuidv4 } from "uuid";
 
-// Defina os tipos
+// Define types
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -28,6 +28,19 @@ export interface TrainingFile {
   timestamp: Date;
 }
 
+export interface AgentFunction {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+  webhook?: string;
+}
+
+export interface AdminConfig {
+  username: string;
+  passwordHash: string;
+  apiKey: string;
+}
+
 export interface AgentConfig {
   systemPrompt: string;
   model: string;
@@ -40,12 +53,7 @@ export interface AgentConfig {
     language: string;
     latency: number;
   };
-  functions: Array<{
-    name: string;
-    description: string;
-    parameters: Record<string, any>;
-    webhook?: string;
-  }>;
+  functions: AgentFunction[];
   trainingFiles: TrainingFile[];
 }
 
@@ -61,15 +69,19 @@ interface ChatContextType {
   startNewConversation: () => void;
   widgetConfig: WidgetConfig;
   setWidgetConfig: (config: WidgetConfig) => void;
+  updateWidgetConfig: (config: WidgetConfig) => Promise<boolean>;
   agentConfig: AgentConfig;
   setAgentConfig: (config: AgentConfig) => void;
-  addTrainingFile: (file: TrainingFile) => void;
+  updateAgentConfig: (config: AgentConfig) => Promise<boolean>;
+  adminConfig: AdminConfig;
+  updateAdminConfig: (config: AdminConfig) => Promise<boolean>;
+  addTrainingFile: (file: File) => Promise<void>;
   removeTrainingFile: (id: string) => void;
   isDbConnected: boolean;
   setIsDbConnected: (connected: boolean) => void;
 }
 
-// Valor padrão para o contexto
+// Default context value
 const defaultContext: ChatContextType = {
   isWidgetOpen: false,
   setIsWidgetOpen: () => {},
@@ -88,6 +100,7 @@ const defaultContext: ChatContextType = {
     iconType: "chat",
   },
   setWidgetConfig: () => {},
+  updateWidgetConfig: async () => false,
   agentConfig: {
     systemPrompt: "Você é um assistente de IA útil e amigável.",
     model: "gpt-4o-mini",
@@ -104,41 +117,49 @@ const defaultContext: ChatContextType = {
     trainingFiles: [],
   },
   setAgentConfig: () => {},
-  addTrainingFile: () => {},
+  updateAgentConfig: async () => false,
+  adminConfig: {
+    username: "admin",
+    passwordHash: "",
+    apiKey: "",
+  },
+  updateAdminConfig: async () => false,
+  addTrainingFile: async () => {},
   removeTrainingFile: () => {},
   isDbConnected: false,
   setIsDbConnected: () => {},
 };
 
-// Crie o contexto
+// Create the context
 const ChatContext = createContext<ChatContextType>(defaultContext);
 
-// Hook personalizado para acessar o contexto
+// Custom hook to access the context
 export const useChat = () => useContext(ChatContext);
 
-// Provedor do contexto
+// Context provider
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const [isVoiceChatActive, setIsVoiceChatActive] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>(defaultContext.widgetConfig);
   const [agentConfig, setAgentConfig] = useState<AgentConfig>(defaultContext.agentConfig);
-  const [isDbConnected, setIsDbConnected] = useState(false);
+  const [adminConfig, setAdminConfig] = useState<AdminConfig>(defaultContext.adminConfig);
+  const [isDbConnected, setIsDbConnected] = useState(isConnected());
 
-  // Carrega a configuração inicial
+  // Load initial configuration
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        // Carrega a configuração do widget
-        const widgetConfigData = await fetchWidgetConfig();
+        // Load widget configuration
+        const widgetConfigData = await getWidgetConfig();
         if (widgetConfigData) {
           setWidgetConfig(widgetConfigData);
         }
 
-        // Carrega a configuração do agente
-        const agentConfigData = await fetchAgentConfig();
+        // Load agent configuration
+        const agentConfigData = await getAgentConfig();
         if (agentConfigData) {
-          // Certifique-se de que as datas nas trainingFiles são objetos Date
+          // Ensure trainingFiles dates are Date objects
           if (agentConfigData.trainingFiles) {
             agentConfigData.trainingFiles = agentConfigData.trainingFiles.map((file) => ({
               ...file,
@@ -147,15 +168,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           setAgentConfig(agentConfigData);
         }
+        
+        // Load admin configuration
+        const adminConfigData = await getAdminConfig();
+        if (adminConfigData) {
+          setAdminConfig(adminConfigData);
+        }
+        
+        // Set database connection status
+        setIsDbConnected(isConnected());
       } catch (error) {
-        console.error("Erro ao carregar configurações:", error);
+        console.error("Error loading configurations:", error);
       }
     };
 
     loadConfig();
   }, []);
 
-  // Adicionar uma mensagem
+  // Add a message
   const addMessage = useCallback((content: string, role: "user" | "assistant" | "system"): string => {
     const id = uuidv4();
     const newMessage: Message = {
@@ -169,7 +199,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return id;
   }, []);
 
-  // Atualizar uma mensagem existente
+  // Update an existing message
   const updateMessage = useCallback((id: string, content: string) => {
     setMessages((prevMessages) =>
       prevMessages.map((msg) =>
@@ -178,33 +208,93 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   }, []);
 
-  // Limpar todas as mensagens
+  // Clear all messages
   const clearMessages = useCallback(() => {
     setMessages([]);
   }, []);
 
-  // Iniciar uma nova conversa
+  // Start a new conversation
   const startNewConversation = useCallback(() => {
     clearMessages();
   }, [clearMessages]);
 
-  // Adicionar um arquivo de treinamento
-  const addTrainingFile = useCallback((file: TrainingFile) => {
-    setAgentConfig((prev) => ({
-      ...prev,
-      trainingFiles: [...prev.trainingFiles, file],
-    }));
+  // Update widget configuration
+  const handleUpdateWidgetConfig = useCallback(async (config: WidgetConfig) => {
+    setWidgetConfig(config);
+    return await updateWidgetConfig(config);
   }, []);
 
-  // Remover um arquivo de treinamento
+  // Update agent configuration
+  const handleUpdateAgentConfig = useCallback(async (config: AgentConfig) => {
+    setAgentConfig(config);
+    return await updateAgentConfig(config);
+  }, []);
+
+  // Update admin configuration
+  const handleUpdateAdminConfig = useCallback(async (config: AdminConfig) => {
+    setAdminConfig(config);
+    return await updateAdminConfig(config);
+  }, []);
+
+  // Add a training file
+  const addTrainingFile = useCallback(async (file: File) => {
+    try {
+      const reader = new FileReader();
+      
+      const filePromise = new Promise<TrainingFile>((resolve) => {
+        reader.onload = (e) => {
+          const newFile: TrainingFile = {
+            id: uuidv4(),
+            name: file.name,
+            content: e.target?.result as string,
+            size: file.size,
+            type: file.type,
+            timestamp: new Date()
+          };
+          
+          resolve(newFile);
+        };
+      });
+      
+      reader.readAsText(file);
+      
+      const newFile = await filePromise;
+      
+      setAgentConfig((prev) => ({
+        ...prev,
+        trainingFiles: [...prev.trainingFiles, newFile],
+      }));
+      
+      // Save updated config
+      await updateAgentConfig({
+        ...agentConfig,
+        trainingFiles: [...agentConfig.trainingFiles, newFile]
+      });
+      
+    } catch (error) {
+      console.error("Error adding training file:", error);
+      throw error;
+    }
+  }, [agentConfig]);
+
+  // Remove a training file
   const removeTrainingFile = useCallback((id: string) => {
-    setAgentConfig((prev) => ({
-      ...prev,
-      trainingFiles: prev.trainingFiles.filter((file) => file.id !== id),
-    }));
+    setAgentConfig((prev) => {
+      const updatedConfig = {
+        ...prev,
+        trainingFiles: prev.trainingFiles.filter((file) => file.id !== id),
+      };
+      
+      // Save updated config
+      updateAgentConfig(updatedConfig).catch(err => {
+        console.error("Error saving agent config after removing file:", err);
+      });
+      
+      return updatedConfig;
+    });
   }, []);
 
-  // Valor do contexto
+  // Context value
   const contextValue: ChatContextType = {
     isWidgetOpen,
     setIsWidgetOpen,
@@ -217,8 +307,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     startNewConversation,
     widgetConfig,
     setWidgetConfig,
+    updateWidgetConfig: handleUpdateWidgetConfig,
     agentConfig,
     setAgentConfig,
+    updateAgentConfig: handleUpdateAgentConfig,
+    adminConfig,
+    updateAdminConfig: handleUpdateAdminConfig,
     addTrainingFile,
     removeTrainingFile,
     isDbConnected,
