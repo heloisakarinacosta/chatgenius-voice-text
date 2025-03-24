@@ -34,6 +34,8 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     try {
       // Process only text files
       const file = files[0];
+      const isDocx = file.name.endsWith(".docx") || 
+                     file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
       
       // Check if file is a text file or docx
       if (!file.type.startsWith("text/") && 
@@ -41,8 +43,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
           !file.name.endsWith(".md") &&
           !file.name.endsWith(".csv") &&
           !file.name.endsWith(".json") &&
-          !file.name.endsWith(".docx") &&
-          !file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          !isDocx) {
         toast.error("Por favor, envie apenas arquivos de texto (.txt, .md, .csv, .json, .docx)");
         return;
       }
