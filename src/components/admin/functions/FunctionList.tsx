@@ -2,6 +2,8 @@
 import React from "react";
 import { AgentFunction } from "@/contexts/ChatContext";
 import FunctionListItem from "./FunctionListItem";
+import { Button } from "@/components/ui/button";
+import { PlayCircle } from "lucide-react";
 
 interface FunctionListProps {
   functions: AgentFunction[];
@@ -32,7 +34,7 @@ const FunctionList: React.FC<FunctionListProps> = ({
           func={func}
           onEdit={() => onEditFunction(index)}
           onDelete={() => onDeleteFunction(index)}
-          onTest={onTestFunction && (() => onTestFunction(func))}
+          onTest={onTestFunction ? () => onTestFunction(func) : undefined}
         />
       ))}
     </div>

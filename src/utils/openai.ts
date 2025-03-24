@@ -1,6 +1,16 @@
+
 export interface OpenAIMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    }
+  }>;
+  tool_call_id?: string;
 }
 
 export interface OpenAIFunction {
@@ -159,7 +169,7 @@ export async function callOpenAI(
         const functionResult = await functionCallbacks[functionName](parameters);
         
         // Add function result to messages and call the API again
-        const updatedMessages = [
+        const updatedMessages: OpenAIMessage[] = [
           ...messages,
           {
             role: "assistant",
@@ -315,7 +325,7 @@ export async function streamOpenAI(
                 const result = await callbacks.onFunctionCall(functionName, parameters);
                 
                 // Call API again with function result
-                const updatedMessages = [
+                const updatedMessages: OpenAIMessage[] = [
                   ...messages,
                   {
                     role: "assistant",
