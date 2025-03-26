@@ -10,8 +10,9 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioQueue = useRef<string[]>([]);
   const isProcessingQueue = useRef<boolean>(false);
+  const lastPlayedTextRef = useRef<string>("");
   
-  // Efeito para aplicar mudanças de volume e velocidade
+  // Effect for applying volume and playback rate changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -19,7 +20,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   }, [volume, playbackRate]);
   
-  // Efeito para inicializar o audio ref
+  // Effect to initialize audio ref
   useEffect(() => {
     if (!audioRef.current) {
       audioRef.current = new Audio();
@@ -30,14 +31,14 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       
       audioRef.current.onended = () => {
         setIsPlaying(false);
-        // Processar próximo item na fila
+        // Process next item in queue
         processQueue();
       };
       
       audioRef.current.onerror = (e) => {
-        console.error("Erro ao reproduzir áudio:", e);
+        console.error("Error playing audio:", e);
         setIsPlaying(false);
-        // Tenta o próximo item na fila em caso de erro
+        // Try next item in queue in case of error
         processQueue();
       };
     }
@@ -50,7 +51,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     };
   }, []);
   
-  // Processar a fila de áudios
+  // Process audio queue
   const processQueue = async () => {
     if (isProcessingQueue.current || audioQueue.current.length === 0) {
       return;
@@ -69,7 +70,10 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         try {
           await audioRef.current.play();
         } catch (error) {
-          console.error("Erro ao reproduzir áudio da fila:", error);
+          console.error("Error playing queued audio:", error);
+          // If we can't play, try the next item
+          isProcessingQueue.current = false;
+          processQueue();
         }
       }
     } finally {
@@ -77,26 +81,76 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
-  // Função para reproduzir áudio
-  const playAudio = (url: string) => {
-    // Adiciona à fila
+  // Function to play audio
+  const playAudio = (url: string, text?: string) => {
+    // Check if this is a duplicate of the last played text
+    if (text && text.trim() === lastPlayedTextRef.current.trim()) {
+      console.log("Skipping duplicate text:", text);
+      return;
+    }
+    
+    // If text is provided, update the last played text
+    if (text) {
+      lastPlayedTextRef.current = text;
+    }
+    
+    // Add to queue
     audioQueue.current.push(url);
     
-    // Se não está reproduzindo, inicia processamento da fila
+    // If not playing, start processing queue
     if (!isPlaying) {
       processQueue();
     }
   };
   
-  // Parar a reprodução
+  // Function to play streaming text
+  const playStreamingText = (url: string, text: string, isComplete: boolean = false) => {
+    // For streaming, we want to update the last played text only on complete messages
+    if (isComplete) {
+      lastPlayedTextRef.current = text;
+    }
+    
+    // Add to queue
+    audioQueue.current.push(url);
+    
+    // If not playing, start processing queue
+    if (!isPlaying) {
+      processQueue();
+    }
+  };
+  
+  // Stop playback
   const stopAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       setIsPlaying(false);
     }
-    // Limpa a fila
+    // Clear queue
     audioQueue.current = [];
+    lastPlayedTextRef.current = "";
+  };
+  
+  // Pause playback without clearing queue
+  const pauseAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+  
+  // Resume playback if paused
+  const resumeAudio = async () => {
+    if (audioRef.current && !isPlaying && audioRef.current.src) {
+      try {
+        await audioRef.current.play();
+      } catch (error) {
+        console.error("Error resuming audio:", error);
+      }
+    } else if (!isPlaying) {
+      // If nothing is currently loaded but we have items in queue
+      processQueue();
+    }
   };
   
   return {
@@ -109,6 +163,9 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     setSelectedVoice,
     isPlaying,
     playAudio,
-    stopAudio
+    playStreamingText,
+    stopAudio,
+    pauseAudio,
+    resumeAudio
   };
 }
