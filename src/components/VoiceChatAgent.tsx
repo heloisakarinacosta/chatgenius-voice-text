@@ -19,6 +19,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const processingAudioRef = useRef<boolean>(false);
+  const lastProcessTimeRef = useRef<number>(0);
   
   const { 
     addMessage, 
@@ -72,7 +74,21 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
+        // Limpa os chunks para o próximo segmento
+        audioChunksRef.current = [];
+        
+        // Processa o áudio atual
         processAudioBlob(audioBlob);
+        
+        // Se ainda estiver no modo de gravação, inicia uma nova gravação
+        if (isRecording && mediaRecorderRef.current) {
+          console.log("Reiniciando gravação para modo conversacional");
+          try {
+            mediaRecorderRef.current.start(1000);
+          } catch (error) {
+            console.error("Erro ao reiniciar gravação:", error);
+          }
+        }
       };
       
       // Start recording
@@ -80,7 +96,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       setIsRecording(true);
       
       // Set up silence detection
-      console.log("Iniciada gravação com detecção de silêncio");
+      console.log("Iniciada gravação com detecção de silêncio para modo conversacional");
       setupSilenceDetection(stream);
       
     } catch (error) {
@@ -92,54 +108,81 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   };
 
   const setupSilenceDetection = (stream: MediaStream) => {
-    // Create audio context
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const analyser = audioContext.createAnalyser();
-    const microphone = audioContext.createMediaStreamSource(stream);
-    const scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
-    
-    analyser.smoothingTimeConstant = 0.8;
-    analyser.fftSize = 1024;
-    
-    microphone.connect(analyser);
-    analyser.connect(scriptProcessor);
-    scriptProcessor.connect(audioContext.destination);
-    
-    let silenceStart = Date.now();
-    const silenceThreshold = 15; // Volume threshold below which is considered silence
-    
-    scriptProcessor.onaudioprocess = () => {
-      const array = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(array);
-      let volume = array.reduce((a, b) => a + b, 0) / array.length;
+    try {
+      // Usar AnalyserNode em vez de ScriptProcessorNode para minimizar alertas de depreciação
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
       
-      if (volume < silenceThreshold) {
-        // If silence lasts for more than 1.5 seconds, stop recording
-        if (Date.now() - silenceStart > 1500 && isRecording) {
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-          }
+      // Configuração do AnalyserNode
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      microphone.connect(analyser);
+      
+      // Buffer para análise de amplitude
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      let silenceStart = Date.now();
+      const silenceThreshold = 15; // Volume abaixo do qual é considerado silêncio
+      const conversationalPauseTime = 1500; // 1.5 segundos de silêncio para considerar uma pausa conversacional
+      
+      // Função para análise periódica
+      const checkAudioLevel = () => {
+        if (!isRecording) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        
+        // Detecção de silêncio
+        if (average < silenceThreshold) {
+          const currentTime = Date.now();
+          const elapsedSilence = currentTime - silenceStart;
           
-          silenceTimeoutRef.current = setTimeout(() => {
-            console.log("Detectado silêncio, parando gravação");
-            stopRecording();
-            
-            // Clean up audio processing
-            microphone.disconnect();
-            analyser.disconnect();
-            scriptProcessor.disconnect();
-            audioContext.close();
-          }, 500);
+          // Se o silêncio durar mais do que o tempo conversacional de pausa, processa o áudio
+          if (elapsedSilence > conversationalPauseTime && !processingAudioRef.current) {
+            // Evita detectar silêncios muito frequentes
+            if (currentTime - lastProcessTimeRef.current > 3000) {
+              console.log("Pausa conversacional detectada após " + elapsedSilence + "ms, processando segmento de áudio");
+              
+              // Marca que estamos processando
+              processingAudioRef.current = true;
+              
+              // Para o gravador atual para processar os chunks atuais
+              if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                mediaRecorderRef.current.stop();
+                // O evento onstop lidará com o processamento e reinício
+              }
+              
+              lastProcessTimeRef.current = currentTime;
+            }
+          }
+        } else {
+          // Reinicia o contador de silêncio
+          silenceStart = Date.now();
         }
-      } else {
-        // Reset silence timer
-        silenceStart = Date.now();
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
+        
+        // Continua verificando
+        if (isRecording) {
+          requestAnimationFrame(checkAudioLevel);
         }
-      }
-    };
+      };
+      
+      // Inicia a análise de áudio
+      checkAudioLevel();
+      
+      // Retorno para limpar
+      return () => {
+        microphone.disconnect();
+        audioContext.close();
+      };
+    } catch (error) {
+      console.error("Erro ao configurar detecção de silêncio:", error);
+    }
   };
   
   const stopRecording = () => {
@@ -163,6 +206,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const processAudioBlob = async (audioBlob: Blob) => {
     if (!apiKey || !currentConversationId) {
       console.log("Chamada não está mais ativa, ignorando áudio");
+      processingAudioRef.current = false;
       return;
     }
     
@@ -181,6 +225,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       if (!transcription || transcription.trim() === "") {
         console.log("Transcrição vazia, ignorando");
         setIsProcessing(false);
+        processingAudioRef.current = false;
         return;
       }
       
@@ -256,6 +301,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       });
     } finally {
       setIsProcessing(false);
+      processingAudioRef.current = false;
     }
   };
 
@@ -280,7 +326,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       {isRecording && (
         <div className="text-center text-sm text-muted-foreground animate-pulse">
-          Falando... (Silêncio para parar)
+          Falando... (Fale e faça pausas naturais para resposta)
         </div>
       )}
       
