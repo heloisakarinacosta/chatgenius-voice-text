@@ -67,7 +67,7 @@ export const ChatContext = createContext<ChatContextType>({
   sendMessage: () => Promise.resolve(false),
   addMessage: () => "",
   updateMessage: () => {},
-  startNewConversation: () => {},
+  startNewConversation: () => Promise.resolve(null),
   addTrainingFile: () => Promise.resolve(false),
   removeTrainingFile: () => Promise.resolve(false),
   loadData: () => Promise.resolve()
@@ -295,7 +295,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Function to start a new conversation
-  const startNewConversation = async () => {
+  const startNewConversation = async (): Promise<string | null> => {
     try {
       const newConversationId = uuidv4();
       

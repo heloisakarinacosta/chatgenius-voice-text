@@ -85,7 +85,7 @@ export interface ChatContextType {
   sendMessage: (content: string) => Promise<boolean>;
   addMessage: (content: string, role: 'user' | 'assistant' | 'system') => string;
   updateMessage: (messageId: string, updatedContent: string) => void;
-  startNewConversation: () => void;
+  startNewConversation: () => Promise<string | null>; // Update return type to Promise<string | null>
   
   // Training file methods
   addTrainingFile: (file: TrainingFile) => Promise<boolean>;

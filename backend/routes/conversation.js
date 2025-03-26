@@ -134,6 +134,17 @@ router.post('/:id/messages', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
     
+    // Check if conversation exists first
+    const [conversationRows] = await pool.query(
+      'SELECT id FROM conversations WHERE id = ?',
+      [id]
+    );
+    
+    if (!conversationRows || conversationRows.length === 0) {
+      console.error('Conversation not found:', id);
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    
     // Log received data for debugging
     console.log('Adding message to conversation:', {
       conversationId: id,

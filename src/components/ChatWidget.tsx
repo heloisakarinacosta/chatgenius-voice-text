@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { useChat } from "@/contexts/ChatContext";
 import ChatBubble from "@/components/ChatBubble";
@@ -57,12 +56,15 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
 
   // Create a new conversation if none exists
   useEffect(() => {
-    if (isWidgetOpen && !currentConversationId) {
-      console.log("No conversation ID found, creating a new one");
-      startNewConversation().then(id => {
+    const createConversationIfNeeded = async () => {
+      if (isWidgetOpen && !currentConversationId) {
+        console.log("No conversation ID found, creating a new one");
+        const id = await startNewConversation();
         console.log("Created new conversation with ID:", id);
-      });
-    }
+      }
+    };
+    
+    createConversationIfNeeded();
   }, [isWidgetOpen, currentConversationId, startNewConversation]);
   
   const scrollToBottom = () => {
@@ -139,8 +141,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setIsLoading(true);
     try {
       console.log("Starting new conversation");
-      await startNewConversation();
-      toast.success("Nova conversa iniciada");
+      const newId = await startNewConversation();
+      if (newId) {
+        toast.success("Nova conversa iniciada");
+      } else {
+        toast.error("Erro ao iniciar nova conversa");
+      }
     } catch (error) {
       console.error("Error starting new conversation:", error);
       toast.error("Erro ao iniciar nova conversa");
