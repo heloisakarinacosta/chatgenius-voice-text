@@ -41,28 +41,25 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [errorSending, setErrorSending] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  // Scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
   
-  // Focus input field when chat opens
   useEffect(() => {
     if (isWidgetOpen && !isVoiceChatActive && inputRef.current) {
       inputRef.current.focus();
     }
   }, [isWidgetOpen, isVoiceChatActive]);
 
-  // Debug info about API key
   useEffect(() => {
     console.log("ChatWidget: API key present:", !!apiKey);
   }, [apiKey]);
 
-  // Create a new conversation if none exists
   useEffect(() => {
     const createConversationIfNeeded = async () => {
       if (isWidgetOpen && !currentConversationId) {
@@ -97,7 +94,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
   
   const handleSendMessage = async () => {
-    if (inputValue.trim() === "" || isLoading) return;
+    if (inputValue.trim() === "" || isLoading || processingMessage) return;
     
     if (!apiKey) {
       toast.error("Configure sua chave API OpenAI primeiro", {
@@ -107,6 +104,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
     
     setIsLoading(true);
+    setProcessingMessage(true);
     setErrorSending(false);
     const message = inputValue.trim();
     setInputValue("");
@@ -114,7 +112,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     try {
       console.log("Sending message, current conversation ID:", currentConversationId);
       
-      // Ensure we have a conversation before sending the message
       if (!currentConversationId) {
         console.log("No active conversation, creating a new one");
         const newId = await startNewConversation();
@@ -124,11 +121,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         console.log("New conversation created with ID:", newId);
       }
       
-      // Add message locally for immediate user feedback
       const tempMessageId = addMessage(message, "user");
       console.log(`Added message to UI with temp ID: ${tempMessageId}`);
       
-      // Now send the message to the server
       console.log("Sending message to server...");
       const success = await sendMessage(message);
       
@@ -138,11 +133,10 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         toast.error("Erro ao enviar mensagem", {
           description: "Não foi possível comunicar com o servidor. Tente novamente."
         });
-        return; // Exit early if the server communication failed
+        return;
       } else {
         console.log("Message sent successfully");
         
-        // After successfully sending the message to the server, directly call OpenAI
         await getAssistantResponse();
       }
     } catch (error) {
@@ -153,21 +147,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       });
     } finally {
       setIsLoading(false);
+      setProcessingMessage(false);
     }
   };
   
-  // Function to get assistant response directly from OpenAI
   const getAssistantResponse = async () => {
     if (!apiKey || !currentConversationId) return;
     
     try {
-      // Collect all messages in the conversation to maintain context
       const conversationMessages = messages.map(msg => ({
         role: msg.role as "user" | "assistant" | "system",
         content: msg.content
       }));
       
-      // Add system prompt from agent config
       if (agentConfig?.systemPrompt) {
         conversationMessages.unshift({
           role: "system",
@@ -175,10 +167,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         });
       }
       
-      // Create a temporary message ID for the assistant response
       const tempAssistantId = addMessage("...", "assistant");
       
-      // Call OpenAI directly
       const response = await callOpenAI({
         messages: conversationMessages,
         model: agentConfig?.model || "gpt-4o-mini",
@@ -187,7 +177,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         detectEmotion: agentConfig?.detectEmotion || false
       }, apiKey);
       
-      // Update the temporary message with the actual response
       updateMessage(tempAssistantId, response);
       
       console.log("Received response from OpenAI:", response.substring(0, 50) + "...");
@@ -221,7 +210,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   
   const toggleWidget = () => {
     setIsWidgetOpen(!isWidgetOpen);
-    setIsMinimized(false); // Reset minimized state when opening/closing widget
+    setIsMinimized(false);
   };
   
   const toggleMinimize = (e: React.MouseEvent) => {
@@ -233,10 +222,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setIsVoiceChatActive(!isVoiceChatActive);
   };
   
-  // Determine widget position from config
   const widgetPosition = widgetConfig?.position || "bottom-right";
   
-  // Position classes based on configuration
   const positionClasses = {
     "bottom-right": "bottom-4 right-4",
     "bottom-left": "bottom-4 left-4",
@@ -244,15 +231,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     "top-left": "top-4 left-4"
   }[widgetPosition];
   
-  // Widget colors based on configuration
   const primaryColor = widgetConfig?.primaryColor || "#000000";
   
-  // Custom styles for colored elements
   const colorStyles = {
     backgroundColor: primaryColor
   };
   
-  // If widget is closed, show only the chat button
   if (!isWidgetOpen) {
     return (
       <div className={`fixed z-50 ${positionClasses}`}>
@@ -285,7 +269,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   return (
     <div className={`fixed z-50 ${positionClasses}`}>
       <div className="bg-background rounded-lg shadow-lg overflow-hidden flex flex-col w-80 sm:w-96 transition-all duration-300 max-h-[85vh] transform animate-in fade-in slide-in-from-bottom-8">
-        {/* Chat Header */}
         <div 
           className="p-4 flex justify-between items-center text-white cursor-pointer"
           style={colorStyles}
@@ -305,9 +288,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
           </div>
         </div>
         
-        {/* Chat Body - Hidden when minimized */}
         <div className={`flex-1 flex flex-col ${isMinimized ? 'hidden' : ''}`}>
-          {/* Messages container */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[50vh]">
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center">
@@ -323,14 +304,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             <div ref={messagesEndRef} />
           </div>
           
-          {/* Voice chat UI */}
           {isVoiceChatActive && (
             <div className="px-4 py-3 border-t">
               <VoiceChatAgent apiKey={apiKey || ""} />
             </div>
           )}
           
-          {/* Input area */}
           <div className="p-4 border-t bg-muted/30">
             <div className="flex space-x-2">
               <Button
@@ -339,7 +318,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 className={`rounded-full p-2 ${isVoiceChatActive ? 'bg-primary/10 text-primary' : ''}`}
                 onClick={toggleVoiceChat}
                 title={isVoiceChatActive ? "Desativar chat por voz" : "Ativar chat por voz"}
-                disabled={isLoading}
+                disabled={isLoading || processingMessage}
               >
                 <Mic className="h-5 w-5" />
               </Button>
@@ -351,7 +330,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 onKeyDown={handleKeyDown}
                 placeholder="Digite sua mensagem..."
                 className="flex-1"
-                disabled={isLoading}
+                disabled={isLoading || processingMessage}
               />
               
               <Button
@@ -359,9 +338,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 variant="default"
                 className="rounded-full p-2"
                 onClick={handleSendMessage}
-                disabled={isLoading || inputValue.trim() === ""}
+                disabled={isLoading || processingMessage || inputValue.trim() === ""}
               >
-                {isLoading ? (
+                {isLoading || processingMessage ? (
                   <RefreshCw className="h-5 w-5 animate-spin" />
                 ) : (
                   <Send className="h-5 w-5" />
@@ -381,7 +360,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 size="sm" 
                 className="text-xs text-muted-foreground"
                 onClick={handleStartNewConversation}
-                disabled={isLoading}
+                disabled={isLoading || processingMessage}
               >
                 <RefreshCw className="h-3 w-3 mr-1" /> 
                 Nova conversa

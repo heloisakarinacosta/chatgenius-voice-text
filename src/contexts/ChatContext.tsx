@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as database from "@/services/databaseService";
@@ -236,6 +237,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Function to add a message directly
   const addMessage = (content: string, role: "user" | "assistant" | "system"): string => {
     const messageId = uuidv4();
+    
+    // Check if this exact message already exists to prevent duplicates
+    const duplicateMessage = messages.find(msg => 
+      msg.role === role && 
+      msg.content === content &&
+      // Only consider messages from the last 5 seconds as potential duplicates
+      new Date().getTime() - msg.timestamp.getTime() < 5000
+    );
+    
+    if (duplicateMessage) {
+      console.log("Duplicate message detected, skipping:", content.substring(0, 30));
+      return duplicateMessage.id;
+    }
+    
     const newMessage: Message = {
       id: messageId,
       role: role,
