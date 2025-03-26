@@ -138,10 +138,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         });
       } else {
         console.log("Message sent successfully");
-        
-        // Add a temporary waiting message from the assistant until the real response comes
-        const tempAssistantId = addMessage("Aguarde enquanto processamos sua mensagem...", "assistant");
-        console.log("Added temporary assistant message with ID:", tempAssistantId);
       }
     } catch (error) {
       console.error("Error sending message:", error);
