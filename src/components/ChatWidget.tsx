@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { useChat } from "@/contexts/ChatContext";
 import ChatBubble from "@/components/ChatBubble";
@@ -59,8 +60,13 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     const createConversationIfNeeded = async () => {
       if (isWidgetOpen && !currentConversationId) {
         console.log("No conversation ID found, creating a new one");
-        const id = await startNewConversation();
-        console.log("Created new conversation with ID:", id);
+        try {
+          const id = await startNewConversation();
+          console.log("Created new conversation with ID:", id);
+        } catch (error) {
+          console.error("Error creating new conversation:", error);
+          toast.error("Erro ao criar nova conversa");
+        }
       }
     };
     
@@ -94,37 +100,39 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
     
     setIsLoading(true);
+    setErrorSending(false);
     const message = inputValue.trim();
     setInputValue("");
     
     try {
-      console.log("Sending message, current conversation ID:", currentConversationId);
+      console.log("Preparando para enviar mensagem, ID da conversa atual:", currentConversationId);
       
-      // Add message optimistically to UI first for better UX
-      const tempMessageId = addMessage(message, "user");
-      console.log("Added message to UI with temp ID:", tempMessageId);
-      
-      // Ensure we have a conversation ID before trying to send to the server
+      // Garantir que temos uma conversa antes de enviar a mensagem
       if (!currentConversationId) {
-        console.log("No conversation ID, creating new conversation");
+        console.log("Nenhuma conversa ativa, criando uma nova");
         const newId = await startNewConversation();
         if (!newId) {
           throw new Error("Falha ao criar nova conversa");
         }
-        console.log("Created new conversation with ID:", newId);
+        console.log("Nova conversa criada com ID:", newId);
       }
       
-      // Now send the message to the server
+      // Adicionar mensagem localmente para feedback imediato ao usuário
+      const tempMessageId = addMessage(message, "user");
+      console.log(`Mensagem adicionada à UI com ID temporário: ${tempMessageId}`);
+      
+      // Agora enviar a mensagem para o servidor
+      console.log("Enviando mensagem para o servidor...");
       const success = await sendMessage(message);
       
       if (!success) {
-        console.error("Failed to send message to server");
+        console.error("Falha ao enviar mensagem para o servidor");
         setErrorSending(true);
         toast.error("Erro ao enviar mensagem", {
           description: "Não foi possível comunicar com o servidor. Tente novamente."
         });
       } else {
-        console.log("Message sent successfully");
+        console.log("Mensagem enviada com sucesso");
       }
     } catch (error) {
       console.error("Erro ao enviar mensagem:", error);
@@ -140,15 +148,17 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const handleStartNewConversation = async () => {
     setIsLoading(true);
     try {
-      console.log("Starting new conversation");
+      console.log("Iniciando nova conversa");
       const newId = await startNewConversation();
       if (newId) {
         toast.success("Nova conversa iniciada");
+        console.log("Nova conversa iniciada com ID:", newId);
       } else {
         toast.error("Erro ao iniciar nova conversa");
+        console.error("Nenhum ID retornado ao iniciar nova conversa");
       }
     } catch (error) {
-      console.error("Error starting new conversation:", error);
+      console.error("Erro ao iniciar nova conversa:", error);
       toast.error("Erro ao iniciar nova conversa");
     } finally {
       setIsLoading(false);

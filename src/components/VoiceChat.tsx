@@ -12,7 +12,7 @@ interface VoiceChatProps {
 }
 
 const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
-  const { isVoiceChatActive, setIsVoiceChatActive, addMessage, updateMessage } = useChat();
+  const { isVoiceChatActive, setIsVoiceChatActive, addMessage, updateMessage, sendMessage } = useChat();
   const [isRecording, setIsRecording] = useState(false);
   const [isListening, setIsListening] = useState(true);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -25,6 +25,9 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const streamRef = useRef<MediaStream | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
   const [lastUserInteraction, setLastUserInteraction] = useState<Date>(new Date());
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isListening && !isRecording && !isTranscribing && !isTextInputMode) {
@@ -42,10 +45,53 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     };
   }, [isListening, isRecording, isTranscribing, isTextInputMode, lastUserInteraction]);
 
+  // Draw audio visualization on canvas
+  const drawAudioVisualization = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set styles
+    ctx.fillStyle = 'rgba(0, 120, 255, 0.2)';
+    ctx.strokeStyle = 'rgb(0, 120, 255)';
+    ctx.lineWidth = 2;
+    
+    // Draw waveform based on audio level
+    ctx.beginPath();
+    const centerY = canvas.height / 2;
+    const amplitude = (audioLevel / 100) * (canvas.height / 2 - 5);
+    
+    // Create a sine wave effect based on audio level
+    for (let x = 0; x < canvas.width; x += 1) {
+      const y = centerY + Math.sin(x * 0.1 + Date.now() * 0.005) * amplitude;
+      if (x === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    
+    ctx.stroke();
+    
+    // Continue animation
+    animationFrameRef.current = requestAnimationFrame(drawAudioVisualization);
+  };
+
   const startRecording = async () => {
     try {
       console.log("Solicitando acesso ao microfone...");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       streamRef.current = stream;
       
       console.log("Acesso ao microfone concedido, criando MediaRecorder");
@@ -83,9 +129,20 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           
           if (transcript) {
             console.log(`Transcrição: "${transcript}"`);
-            if (addMessage) {
-              addMessage(transcript, "user");
+            const messageId = addMessage(transcript, "user");
+            console.log(`Mensagem adicionada com ID: ${messageId}`);
+            
+            // Enviar a mensagem para o servidor
+            try {
+              const success = await sendMessage(transcript);
+              if (!success) {
+                console.error("Falha ao enviar mensagem transcrita para o servidor");
+                toast.error("Erro ao enviar áudio transcrito");
+              }
+            } catch (error) {
+              console.error("Erro ao enviar mensagem transcrita:", error);
             }
+            
             setLastUserInteraction(new Date());
           } else {
             console.error("Transcrição vazia recebida");
@@ -116,6 +173,35 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         setRecordingTime(0);
         audioChunksRef.current = [];
       };
+      
+      // Set up audio analyzer for visualization
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      // Start visualization
+      const updateAudioLevel = () => {
+        if (!isRecording) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((acc, val) => acc + val, 0) / bufferLength;
+        setAudioLevel(average);
+        
+        if (isRecording) {
+          setTimeout(updateAudioLevel, 100);
+        }
+      };
+      
+      updateAudioLevel();
+      
+      // Start visualization
+      if (canvasRef.current) {
+        drawAudioVisualization();
+      }
       
       mediaRecorder.start();
       setIsRecording(true);
@@ -172,6 +258,12 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      
+      // Stop visualization
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
     }
   };
 
@@ -206,15 +298,28 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     setIsVoiceChatActive(false);
   };
 
-  const handleSendText = () => {
+  const handleSendText = async () => {
     if (!textInput.trim()) return;
     
-    if (addMessage) {
-      addMessage(textInput, "user");
+    try {
+      // Adicionar mensagem localmente
+      const messageId = addMessage(textInput, "user");
+      console.log(`Mensagem de texto adicionada com ID: ${messageId}`);
+      
+      // Enviar mensagem para o servidor
+      const success = await sendMessage(textInput);
+      if (!success) {
+        console.error("Falha ao enviar mensagem de texto para o servidor");
+        toast.error("Erro ao enviar mensagem");
+      }
+      
+      setTextInput("");
+      setIsTextInputMode(false);
+      setLastUserInteraction(new Date());
+    } catch (error) {
+      console.error("Erro ao enviar mensagem de texto:", error);
+      toast.error("Erro ao enviar mensagem");
     }
-    setTextInput("");
-    setIsTextInputMode(false);
-    setLastUserInteraction(new Date());
   };
 
   const formatTime = (seconds: number) => {
@@ -248,6 +353,9 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, []);
@@ -298,6 +406,17 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         </div>
       ) : (
         <div className="flex flex-col items-center">
+          {isRecording && (
+            <div className="w-full mb-3">
+              <canvas 
+                ref={canvasRef} 
+                width={300} 
+                height={60} 
+                className="w-full h-12 rounded-lg bg-black/5"
+              />
+            </div>
+          )}
+          
           <div className="flex gap-4 mb-4">
             <Button
               variant={isRecording ? "destructive" : "default"}

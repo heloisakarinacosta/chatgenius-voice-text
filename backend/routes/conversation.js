@@ -56,6 +56,8 @@ router.get('/', async (req, res) => {
       })
     );
     
+    console.log(`Retrieved ${conversationsWithMessages.length} conversations from database`);
+    
     // Cache the result
     requestCache.set(cacheKey, {
       timestamp: now,
@@ -86,13 +88,25 @@ router.post('/', async (req, res) => {
     
     const pool = db.getDbConnection();
     if (!pool) {
+      console.error('Database not connected, cannot create conversation');
       return res.status(503).json({ error: 'Database not connected' });
     }
+    
+    console.log(`Creating new conversation with ID: ${id}`);
     
     await pool.query(
       'INSERT INTO conversations (id, is_active, created_at) VALUES (?, ?, ?)',
       [id, true, new Date()]
     );
+    
+    // Adicionar uma mensagem de boas-vindas para a nova conversa
+    const welcomeMessageId = uuidv4();
+    await pool.query(
+      'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+      [welcomeMessageId, id, 'assistant', 'Olá! Como posso ajudar você hoje?', new Date()]
+    );
+    
+    console.log(`New conversation created with ID: ${id}`);
     
     res.json({ 
       success: true, 
@@ -131,18 +145,40 @@ router.post('/:id/messages', async (req, res) => {
     
     const pool = db.getDbConnection();
     if (!pool) {
+      console.error('Database not connected, cannot add message');
       return res.status(503).json({ error: 'Database not connected' });
     }
     
-    // Check if conversation exists first
-    const [conversationRows] = await pool.query(
-      'SELECT id FROM conversations WHERE id = ?',
-      [id]
-    );
+    // Verificar se a conversa existe antes
+    let conversationExists = false;
     
-    if (!conversationRows || conversationRows.length === 0) {
-      console.error('Conversation not found:', id);
-      return res.status(404).json({ error: 'Conversation not found' });
+    try {
+      const [conversationRows] = await pool.query(
+        'SELECT id FROM conversations WHERE id = ?',
+        [id]
+      );
+      
+      conversationExists = conversationRows && conversationRows.length > 0;
+      
+      // Se a conversa não existir, crie-a
+      if (!conversationExists) {
+        console.log(`Conversation ${id} not found, creating it automatically`);
+        
+        await pool.query(
+          'INSERT INTO conversations (id, is_active, created_at) VALUES (?, ?, ?)',
+          [id, true, new Date()]
+        );
+        
+        conversationExists = true;
+      }
+    } catch (error) {
+      console.error('Error checking conversation existence:', error);
+      return res.status(500).json({ error: 'Failed to check conversation existence' });
+    }
+    
+    if (!conversationExists) {
+      console.error('Could not create or find conversation:', id);
+      return res.status(404).json({ error: 'Conversation not found and could not be created' });
     }
     
     // Log received data for debugging
@@ -159,6 +195,19 @@ router.post('/:id/messages', async (req, res) => {
     );
     
     console.log('Message added successfully to database');
+    
+    // Se a mensagem for do usuário, gere uma resposta automática
+    if (role === 'user') {
+      const assistantMessageId = uuidv4();
+      const assistantMessage = "Obrigado por sua mensagem! Estamos processando sua solicitação.";
+      
+      await pool.query(
+        'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+        [assistantMessageId, id, 'assistant', assistantMessage, new Date()]
+      );
+      
+      console.log('Auto-response message added to conversation');
+    }
     
     res.json({ 
       success: true, 
