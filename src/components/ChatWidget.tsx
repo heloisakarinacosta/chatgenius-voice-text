@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { Send, X, MessageCircle, Volume2, Mic, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -357,9 +358,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
   };
 
-  const toggleVoiceMode = (value: string) => {
+  const toggleVoiceMode = () => {
     if (setIsVoiceChatActive) {
-      setIsVoiceChatActive(value === "voice");
+      setIsVoiceChatActive(!isVoiceChatActive);
     }
   };
 
@@ -404,14 +405,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               </Link>
             )}
             {agentConfig.voice.enabled && (
-              <ToggleGroup type="single" value={isVoiceChatActive ? "voice" : "text"} onValueChange={toggleVoiceMode}>
-                <ToggleGroupItem value="text" aria-label="Texto" className="h-8 w-8 p-0">
-                  <MessageCircle className="h-4 w-4" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="voice" aria-label="Voz" className="h-8 w-8 p-0">
-                  <Mic className="h-4 w-4" />
-                </ToggleGroupItem>
-              </ToggleGroup>
+              <Button 
+                variant={isVoiceChatActive ? "default" : "outline"} 
+                size="icon" 
+                className="h-8 w-8 p-0"
+                onClick={toggleVoiceMode}
+              >
+                <Mic className="h-4 w-4" />
+              </Button>
             )}
             <Button variant="ghost" size="icon" onClick={() => setIsWidgetOpen(false)}>
               <X className="h-5 w-5" />

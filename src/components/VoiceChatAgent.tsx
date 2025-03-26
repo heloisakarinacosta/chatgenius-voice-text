@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, MicOff, Send, StopCircle, Bot, Volume2, Loader2, PhoneOff } from "lucide-react";
+import { Mic, PhoneOff, Loader2, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -20,7 +20,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [inputValue, setInputValue] = useState("");
-  const [textInputMode, setTextInputMode] = useState(false);
   
   // Refs for audio handling
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -56,7 +55,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }
     }
 
-    // Clean up audio context related resources
+    // Clean up audio context resources
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect();
       scriptProcessorRef.current = null;
@@ -231,7 +230,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       let volumeData: Uint8Array;
       
       scriptProcessorRef.current.onaudioprocess = () => {
-        if (!analyserRef.current) return;
+        if (!analyserRef.current || !isCallActive) return;
         
         volumeData = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(volumeData);
@@ -246,7 +245,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         // Check if user is speaking (adjust threshold as needed)
-        if (average > 15) {
+        if (average > 20) { // Increased threshold for better detection
           hasTalked = true;
           isSilent = false;
           silenceStart = Date.now();
@@ -493,35 +492,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     }
   };
 
-  // Handle send text message button
-  const handleSendText = () => {
-    if (!inputValue.trim() || isProcessing) return;
-    
-    const userMessage = inputValue.trim();
-    setInputValue("");
-    
-    addMessage(userMessage, "user");
-    setIsProcessing(true);
-    
-    processResponse(userMessage);
-  };
-
-  // Handle keyboard enter key
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendText();
-    }
-  };
-
-  // Toggle between voice and text input
-  const toggleInputMode = () => {
-    if (isCallActive) {
-      endVoiceCall();
-    }
-    setTextInputMode(!textInputMode);
-  };
-
   // Check if voice is enabled
   if (!agentConfig.voice.enabled) {
     return (
@@ -554,97 +524,52 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         </div>
       )}
       
-      {textInputMode ? (
-        <div className="flex gap-2">
-          <Input
-            placeholder="Digite sua mensagem..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={isProcessing}
-            className="flex-1"
-          />
-          <Button 
-            size="icon"
-            disabled={!inputValue.trim() || isProcessing}
-            onClick={handleSendText}
-          >
-            <Send className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={toggleInputMode}
-            className="flex-shrink-0"
-            title="Alternar para entrada de voz"
-          >
-            <Mic className="h-5 w-5" />
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-2">
-          {isProcessing ? (
-            <div className="flex items-center justify-center w-full p-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <span className="ml-2 text-sm text-muted-foreground">Processando...</span>
-            </div>
-          ) : isCallActive ? (
-            <div className="flex flex-col items-center gap-3">
-              <div className="text-sm text-center mb-2">
-                <p className="text-muted-foreground">Conversa em andamento</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {isRecording ? "Fale normalmente. Faça pausas para que o assistente responda." : 
-                   isSpeaking ? "Assistente falando..." : "Aguardando..."}
-                </p>
-              </div>
-              
-              <Button
-                size="lg"
-                variant="destructive"
-                onClick={endVoiceCall}
-                className="rounded-full h-16 w-16 hover:scale-105 transition-transform"
-              >
-                <PhoneOff className="h-8 w-8" />
-              </Button>
-              
-              <p className="text-sm text-center text-muted-foreground mt-1">
-                Clique para encerrar a conversa
+      <div className="flex flex-col items-center gap-3">
+        {isCallActive ? (
+          <>
+            <div className="text-sm text-center mb-2">
+              <p className="text-muted-foreground">Conversa em andamento</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isRecording ? "Fale normalmente. Faça pausas para que o assistente responda." : 
+                 isSpeaking ? "Assistente falando..." : "Aguardando..."}
               </p>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleInputMode}
-                className="mt-2"
-              >
-                Alternar para texto
-              </Button>
             </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <Button
-                size="lg"
-                variant="default"
-                onClick={startVoiceCall}
-                className="rounded-full h-16 w-16 bg-green-500 hover:bg-green-600 hover:scale-105 transition-transform"
-              >
-                <Mic className="h-8 w-8" />
-              </Button>
-              
-              <p className="text-sm text-center text-muted-foreground">
-                Clique para iniciar a conversa por voz
-              </p>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleInputMode}
-                className="mt-2"
-              >
-                Alternar para texto
-              </Button>
-            </div>
-          )}
+            
+            <Button
+              size="lg"
+              variant="destructive"
+              onClick={endVoiceCall}
+              className="rounded-full h-16 w-16 hover:scale-105 transition-transform"
+            >
+              <PhoneOff className="h-8 w-8" />
+            </Button>
+            
+            <p className="text-sm text-center text-muted-foreground mt-1">
+              Clique para encerrar a conversa
+            </p>
+          </>
+        ) : (
+          <>
+            <Button
+              size="lg"
+              variant="default"
+              onClick={startVoiceCall}
+              className="rounded-full h-16 w-16 bg-green-500 hover:bg-green-600 hover:scale-105 transition-transform"
+            >
+              <Mic className="h-8 w-8" />
+            </Button>
+            
+            <p className="text-sm text-center text-muted-foreground">
+              Clique para iniciar a conversa por voz
+            </p>
+          </>
+        )}
+      </div>
+      
+      {isProcessing && (
+        <div className="flex items-center justify-center w-full p-2">
+          <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+          <span className="text-xs text-muted-foreground">Processando...</span>
         </div>
       )}
     </div>
