@@ -13,7 +13,7 @@ interface VoiceChatAgentProps {
 }
 
 const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
-  const { agentConfig, messages, addMessage, updateMessage, currentConversationId } = useChat();
+  const { agentConfig, messages, addMessage, updateMessage, currentConversationId, startNewConversation } = useChat();
   const [isCallActive, setIsCallActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -35,6 +35,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   // Configuration for voice conversation
   const silenceThresholdMs = 2000; // Time of silence before sending (2 seconds)
   const interruptionThresholdMs = 300; // How quickly agent should stop when interrupted (0.3 seconds)
+
+  // Debug API key presence - add this for debugging
+  useEffect(() => {
+    console.log("VoiceChatAgent: API key present:", !!apiKey);
+  }, [apiKey]);
 
   // Cleanup audio resources
   const cleanupAudioResources = () => {
@@ -123,6 +128,25 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   // Initialize streaming voice call
   const startVoiceCall = async () => {
     try {
+      // Validate API key explicitly
+      if (!apiKey) {
+        console.error("Não foi possível iniciar chamada de voz: API key ausente");
+        toast.error("Chave API OpenAI não configurada", {
+          description: "Configure a chave API nas configurações para utilizar o chat por voz."
+        });
+        return;
+      }
+
+      // Create conversation if one doesn't exist
+      if (!currentConversationId) {
+        console.log("Criando nova conversa para o chat de voz");
+        const newConvId = await startNewConversation();
+        if (!newConvId) {
+          throw new Error("Falha ao criar nova conversa");
+        }
+        console.log("Nova conversa criada com ID:", newConvId);
+      }
+
       setIsCallActive(true);
       
       // Send a welcome message
@@ -262,12 +286,26 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         if (audioChunksRef.current.length === 0) return;
         
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        console.log("Tamanho do blob de áudio:", audioBlob.size);
         
         // Only process if the blob is larger than 1KB (to avoid empty recordings)
-        if (audioBlob.size > 1024 && apiKey && isCallActive) {
+        // Make sure API key is present and call is active
+        if (!apiKey) {
+          console.error("Chave API ausente, não posso processar áudio");
+          toast.error("Chave API OpenAI não configurada");
+          return;
+        }
+        
+        if (!isCallActive) {
+          console.log("Chamada não está mais ativa, ignorando áudio");
+          return;
+        }
+        
+        // More lenient size check (was 1024 bytes, now 100 bytes)
+        if (audioBlob.size > 100) {
           await processAudioInput(audioBlob);
         } else {
-          console.log("Blob de áudio muito pequeno ou chave API ausente, ignorando");
+          console.log("Blob de áudio muito pequeno, ignorando:", audioBlob.size, "bytes");
           // If call is still active, start listening again
           if (isCallActive && !isSpeaking && !isProcessing) {
             startStreamingRecording();
@@ -296,7 +334,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         // Check if user is speaking (adjust threshold as needed)
-        if (average > 20) { // Threshold for detecting speech
+        if (average > 10) { // Lower threshold for detecting speech (was 20)
           hasTalked = true;
           isSilent = false;
           silenceStart = Date.now();
@@ -447,12 +485,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       // Configure streaming options
       const streamOptions: any = {
         messages: conversationHistory,
-        model: agentConfig.model,
-        temperature: agentConfig.temperature,
-        max_tokens: agentConfig.maxTokens,
+        model: agentConfig.model || "gpt-4o-mini",
+        temperature: agentConfig.temperature || 0.7,
+        max_tokens: agentConfig.maxTokens || 1000,
         stream: true,
-        trainingFiles: agentConfig.trainingFiles,
-        detectEmotion: agentConfig.detectEmotion
+        trainingFiles: agentConfig.trainingFiles || [],
+        detectEmotion: agentConfig.detectEmotion || false
       };
       
       // Add functions if available

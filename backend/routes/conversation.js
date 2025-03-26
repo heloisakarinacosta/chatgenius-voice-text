@@ -94,12 +94,27 @@ router.post('/', async (req, res) => {
     
     console.log(`Creating new conversation with ID: ${id}`);
     
+    // Check if conversation already exists first
+    const [existingConvs] = await pool.query(
+      'SELECT id FROM conversations WHERE id = ?',
+      [id]
+    );
+    
+    if (existingConvs && existingConvs.length > 0) {
+      console.log(`Conversation with ID ${id} already exists, returning success`);
+      return res.json({
+        success: true,
+        message: 'Conversation already exists',
+        id
+      });
+    }
+    
     await pool.query(
       'INSERT INTO conversations (id, is_active, created_at) VALUES (?, ?, ?)',
       [id, true, new Date()]
     );
     
-    // Adicionar uma mensagem de boas-vindas para a nova conversa
+    // Add a welcome message for the new conversation
     const welcomeMessageId = uuidv4();
     await pool.query(
       'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
@@ -115,7 +130,7 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating conversation:', error);
-    res.status(500).json({ error: 'Failed to create conversation' });
+    res.status(500).json({ error: 'Failed to create conversation', details: error.message });
   }
 });
 
@@ -149,7 +164,7 @@ router.post('/:id/messages', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
     
-    // Verificar se a conversa existe antes
+    // Check if the conversation exists first
     let conversationExists = false;
     
     try {
@@ -160,7 +175,7 @@ router.post('/:id/messages', async (req, res) => {
       
       conversationExists = conversationRows && conversationRows.length > 0;
       
-      // Se a conversa não existir, crie-a
+      // If the conversation doesn't exist, create it
       if (!conversationExists) {
         console.log(`Conversation ${id} not found, creating it automatically`);
         
@@ -173,7 +188,7 @@ router.post('/:id/messages', async (req, res) => {
       }
     } catch (error) {
       console.error('Error checking conversation existence:', error);
-      return res.status(500).json({ error: 'Failed to check conversation existence' });
+      return res.status(500).json({ error: 'Failed to check conversation existence', details: error.message });
     }
     
     if (!conversationExists) {
@@ -189,31 +204,36 @@ router.post('/:id/messages', async (req, res) => {
       contentSample: content ? content.substring(0, 50) + '...' : 'undefined'
     });
     
-    await pool.query(
-      'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-      [messageId, id, role, content, new Date()]
-    );
-    
-    console.log('Message added successfully to database');
-    
-    // Se a mensagem for do usuário, gere uma resposta automática
-    if (role === 'user') {
-      const assistantMessageId = uuidv4();
-      const assistantMessage = "Obrigado por sua mensagem! Estamos processando sua solicitação.";
-      
+    try {
       await pool.query(
         'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-        [assistantMessageId, id, 'assistant', assistantMessage, new Date()]
+        [messageId, id, role, content, new Date()]
       );
       
-      console.log('Auto-response message added to conversation');
+      console.log('Message added successfully to database');
+      
+      // If the message is from the user, generate an auto-response
+      if (role === 'user') {
+        const assistantMessageId = uuidv4();
+        const assistantMessage = "Obrigado por sua mensagem! Estamos processando sua solicitação.";
+        
+        await pool.query(
+          'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+          [assistantMessageId, id, 'assistant', assistantMessage, new Date()]
+        );
+        
+        console.log('Auto-response message added to conversation');
+      }
+      
+      res.json({ 
+        success: true, 
+        message: 'Message added successfully',
+        id: messageId
+      });
+    } catch (error) {
+      console.error('Error inserting message:', error);
+      res.status(500).json({ error: 'Failed to insert message', details: error.message });
     }
-    
-    res.json({ 
-      success: true, 
-      message: 'Message added successfully',
-      id: messageId
-    });
   } catch (error) {
     console.error('Error adding message:', error);
     res.status(500).json({ error: 'Failed to add message', details: error.message });

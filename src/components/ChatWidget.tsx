@@ -55,6 +55,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
   }, [isWidgetOpen, isVoiceChatActive]);
 
+  // Debug info about API key
+  useEffect(() => {
+    console.log("ChatWidget: API key present:", !!apiKey);
+  }, [apiKey]);
+
   // Create a new conversation if none exists
   useEffect(() => {
     const createConversationIfNeeded = async () => {
@@ -105,37 +110,41 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setInputValue("");
     
     try {
-      console.log("Preparando para enviar mensagem, ID da conversa atual:", currentConversationId);
+      console.log("Sending message, current conversation ID:", currentConversationId);
       
-      // Garantir que temos uma conversa antes de enviar a mensagem
+      // Ensure we have a conversation before sending the message
       if (!currentConversationId) {
-        console.log("Nenhuma conversa ativa, criando uma nova");
+        console.log("No active conversation, creating a new one");
         const newId = await startNewConversation();
         if (!newId) {
-          throw new Error("Falha ao criar nova conversa");
+          throw new Error("Failed to create new conversation");
         }
-        console.log("Nova conversa criada com ID:", newId);
+        console.log("New conversation created with ID:", newId);
       }
       
-      // Adicionar mensagem localmente para feedback imediato ao usuário
+      // Add message locally for immediate user feedback
       const tempMessageId = addMessage(message, "user");
-      console.log(`Mensagem adicionada à UI com ID temporário: ${tempMessageId}`);
+      console.log(`Added message to UI with temp ID: ${tempMessageId}`);
       
-      // Agora enviar a mensagem para o servidor
-      console.log("Enviando mensagem para o servidor...");
+      // Now send the message to the server
+      console.log("Sending message to server...");
       const success = await sendMessage(message);
       
       if (!success) {
-        console.error("Falha ao enviar mensagem para o servidor");
+        console.error("Failed to send message to server");
         setErrorSending(true);
         toast.error("Erro ao enviar mensagem", {
           description: "Não foi possível comunicar com o servidor. Tente novamente."
         });
       } else {
-        console.log("Mensagem enviada com sucesso");
+        console.log("Message sent successfully");
+        
+        // Add a temporary waiting message from the assistant until the real response comes
+        const tempAssistantId = addMessage("Aguarde enquanto processamos sua mensagem...", "assistant");
+        console.log("Added temporary assistant message with ID:", tempAssistantId);
       }
     } catch (error) {
-      console.error("Erro ao enviar mensagem:", error);
+      console.error("Error sending message:", error);
       setErrorSending(true);
       toast.error("Erro ao enviar mensagem", {
         description: "Verifique sua conexão e tente novamente."
@@ -148,17 +157,17 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const handleStartNewConversation = async () => {
     setIsLoading(true);
     try {
-      console.log("Iniciando nova conversa");
+      console.log("Starting new conversation");
       const newId = await startNewConversation();
       if (newId) {
         toast.success("Nova conversa iniciada");
-        console.log("Nova conversa iniciada com ID:", newId);
+        console.log("New conversation started with ID:", newId);
       } else {
         toast.error("Erro ao iniciar nova conversa");
-        console.error("Nenhum ID retornado ao iniciar nova conversa");
+        console.error("No ID returned when starting new conversation");
       }
     } catch (error) {
-      console.error("Erro ao iniciar nova conversa:", error);
+      console.error("Error starting new conversation:", error);
       toast.error("Erro ao iniciar nova conversa");
     } finally {
       setIsLoading(false);
@@ -270,9 +279,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
           </div>
           
           {/* Voice chat UI */}
-          {isVoiceChatActive && apiKey && (
+          {isVoiceChatActive && (
             <div className="px-4 py-3 border-t">
-              <VoiceChatAgent apiKey={apiKey} />
+              <VoiceChatAgent apiKey={apiKey || ""} />
             </div>
           )}
           
