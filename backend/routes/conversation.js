@@ -112,6 +112,12 @@ router.post('/:id/messages', async (req, res) => {
   
   try {
     const { id } = req.params;
+    
+    // Check if id is null or undefined
+    if (!id || id === 'null' || id === 'undefined') {
+      return res.status(400).json({ error: 'Invalid conversation ID' });
+    }
+    
     const { role, content } = req.body;
     const messageId = req.body.id || uuidv4();
     

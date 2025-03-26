@@ -13,7 +13,7 @@ interface VoiceChatAgentProps {
 }
 
 const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
-  const { agentConfig, messages, addMessage, updateMessage } = useChat();
+  const { agentConfig, messages, addMessage, updateMessage, currentConversationId } = useChat();
   const [isCallActive, setIsCallActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -26,8 +26,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioAnalyserRef = useRef<AnalyserNode | null>(null);
+  
+  // Audio visualization
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   
   // Configuration for voice conversation
   const silenceThresholdMs = 2000; // Time of silence before sending (2 seconds)
@@ -54,19 +57,19 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     }
 
     // Clean up audio context resources
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect();
-      scriptProcessorRef.current = null;
-    }
-
-    if (analyserRef.current) {
-      analyserRef.current.disconnect();
-      analyserRef.current = null;
-    }
-
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close().catch(console.error);
       audioContextRef.current = null;
+    }
+
+    if (audioAnalyserRef.current) {
+      audioAnalyserRef.current = null;
+    }
+
+    // Stop animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
 
     // Reset recording state
@@ -100,9 +103,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       };
       
       audioRef.current.onerror = (e) => {
-        console.error("Audio playback error:", e);
+        console.error("Erro na reprodução de áudio:", e);
         setIsSpeaking(false);
-        toast.error("Error playing audio");
+        toast.error("Erro ao reproduzir áudio");
         
         // If there's an error, still try to continue the conversation
         if (isCallActive && !isProcessing) {
@@ -123,15 +126,15 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       setIsCallActive(true);
       
       // Send a welcome message
-      addMessage("Hello! I'm listening. How can I help you?", "assistant");
+      addMessage("Olá! Estou ouvindo. Como posso ajudar?", "assistant");
       
       // Small delay to ensure UI updates before starting the microphone
       setTimeout(() => {
         startStreamingRecording();
       }, 500);
     } catch (error) {
-      console.error("Error starting voice call:", error);
-      toast.error("Could not start voice call");
+      console.error("Erro ao iniciar chamada de voz:", error);
+      toast.error("Não foi possível iniciar a chamada de voz");
       setIsCallActive(false);
     }
   };
@@ -152,13 +155,59 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       setIsSpeaking(false);
     }
     
-    addMessage("Voice conversation ended.", "assistant");
+    addMessage("Conversa por voz encerrada.", "assistant");
+  };
+
+  // Draw audio visualization
+  const drawAudioVisualization = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !audioAnalyserRef.current) return;
+    
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+    
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+    
+    // Clear canvas
+    canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
+    
+    // Get audio data
+    const bufferLength = audioAnalyserRef.current.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    audioAnalyserRef.current.getByteTimeDomainData(dataArray);
+    
+    // Draw waveform
+    canvasCtx.lineWidth = 2;
+    canvasCtx.strokeStyle = 'rgb(0, 128, 255)';
+    canvasCtx.beginPath();
+    
+    const sliceWidth = WIDTH / bufferLength;
+    let x = 0;
+    
+    for (let i = 0; i < bufferLength; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = v * HEIGHT / 2;
+      
+      if (i === 0) {
+        canvasCtx.moveTo(x, y);
+      } else {
+        canvasCtx.lineTo(x, y);
+      }
+      
+      x += sliceWidth;
+    }
+    
+    canvasCtx.lineTo(WIDTH, HEIGHT / 2);
+    canvasCtx.stroke();
+    
+    animationFrameRef.current = requestAnimationFrame(drawAudioVisualization);
   };
 
   // Start recording with automatic silence detection
   const startStreamingRecording = async () => {
     if (isRecording || isSpeaking || isProcessing) {
-      console.log("Cannot start recording: already recording, speaking, or processing");
+      console.log("Não é possível iniciar a gravação: já está gravando, falando ou processando");
       return;
     }
     
@@ -170,7 +219,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioChunksRef.current = [];
       
       // Get media stream
-      console.log("Requesting microphone access...");
+      console.log("Solicitando acesso ao microfone...");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -179,8 +228,21 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         } 
       });
       
-      console.log("Microphone access granted");
+      console.log("Acesso ao microfone concedido");
       streamRef.current = stream;
+      
+      // Create audio context for visualization
+      audioContextRef.current = new AudioContext();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      audioAnalyserRef.current = audioContextRef.current.createAnalyser();
+      
+      audioAnalyserRef.current.fftSize = 2048;
+      source.connect(audioAnalyserRef.current);
+      
+      // Start visualization
+      if (canvasRef.current) {
+        drawAudioVisualization();
+      }
       
       // Create media recorder
       mediaRecorderRef.current = new MediaRecorder(stream, {
@@ -196,7 +258,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       };
       
       mediaRecorderRef.current.onstop = async () => {
-        console.log("MediaRecorder stopped, processing audio chunks");
+        console.log("MediaRecorder parou, processando chunks de áudio");
         if (audioChunksRef.current.length === 0) return;
         
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
@@ -205,7 +267,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         if (audioBlob.size > 1024 && apiKey && isCallActive) {
           await processAudioInput(audioBlob);
         } else {
-          console.log("Audio blob too small or missing API key, ignoring");
+          console.log("Blob de áudio muito pequeno ou chave API ausente, ignorando");
           // If call is still active, start listening again
           if (isCallActive && !isSpeaking && !isProcessing) {
             startStreamingRecording();
@@ -214,46 +276,34 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       };
       
       // Set up audio analyzer for silence detection
-      audioContextRef.current = new AudioContext();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      const microphone = audioContextRef.current.createMediaStreamSource(stream);
-      scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(2048, 1, 1);
-      
-      analyserRef.current.smoothingTimeConstant = 0.8;
-      analyserRef.current.fftSize = 1024;
-      
-      microphone.connect(analyserRef.current);
-      analyserRef.current.connect(scriptProcessorRef.current);
-      scriptProcessorRef.current.connect(audioContextRef.current.destination);
-      
       let silenceStart = Date.now();
       let isSilent = true;
       let hasTalked = false;
       
-      scriptProcessorRef.current.onaudioprocess = () => {
-        if (!analyserRef.current || !isCallActive) return;
+      const checkAudioLevel = () => {
+        if (!audioAnalyserRef.current || !isCallActive) return;
         
-        const volumeData = new Uint8Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getByteFrequencyData(volumeData);
+        const bufferLength = audioAnalyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        audioAnalyserRef.current.getByteFrequencyData(dataArray);
         
         // Calculate volume
-        const arraySum = volumeData.reduce((acc, value) => acc + value, 0);
-        const average = arraySum / volumeData.length;
+        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
         
         // Debug log volume level occasionally
         if (Math.random() < 0.01) { // Log roughly 1% of the time
-          console.log("Current audio level:", average);
+          console.log("Nível de áudio atual:", average);
         }
         
         // Check if user is speaking (adjust threshold as needed)
-        if (average > 20) { // Increased threshold for better detection
+        if (average > 20) { // Threshold for detecting speech
           hasTalked = true;
           isSilent = false;
           silenceStart = Date.now();
           
           // If agent is speaking, stop it when user interrupts
           if (isSpeaking && audioRef.current) {
-            console.log("User interrupted agent");
+            console.log("Usuário interrompeu o agente");
             audioRef.current.pause();
             if (audioRef.current.src) {
               URL.revokeObjectURL(audioRef.current.src);
@@ -270,24 +320,33 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           }
         } else if (!isSilent && hasTalked && Date.now() - silenceStart > silenceThresholdMs) {
           // User has been silent for the threshold duration after speaking
-          console.log(`Silence detected for ${silenceThresholdMs}ms, stopping recording to process speech`);
+          console.log(`Silêncio detectado por ${silenceThresholdMs}ms, parando gravação para processar fala`);
           isSilent = true;
           
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             stopRecording();
           }
+          return;
+        }
+        
+        // Continue checking audio levels if still recording
+        if (isCallActive && !isSpeaking && !isProcessing && mediaRecorderRef.current?.state === 'recording') {
+          setTimeout(checkAudioLevel, 100);
         }
       };
+      
+      // Start audio level checking
+      setTimeout(checkAudioLevel, 100);
       
       // Start recording
       mediaRecorderRef.current.start();
       setIsRecording(true);
-      console.log("Started streaming recording with silence detection");
+      console.log("Iniciada gravação com detecção de silêncio");
       
     } catch (error) {
-      console.error("Error starting streaming recording:", error);
-      toast.error("Could not access microphone", {
-        description: "Please check if you granted permission to use the microphone."
+      console.error("Erro ao iniciar gravação:", error);
+      toast.error("Não foi possível acessar o microfone", {
+        description: "Verifique se você concedeu permissão para usar o microfone."
       });
       setIsCallActive(false);
       setIsRecording(false);
@@ -296,7 +355,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
 
   // Stop the current recording
   const stopRecording = () => {
-    console.log("Stopping recording, state:", mediaRecorderRef.current?.state);
+    console.log("Parando gravação, estado:", mediaRecorderRef.current?.state);
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
@@ -304,26 +363,32 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     } else {
       setIsRecording(false);
     }
+    
+    // Stop animation
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
   };
 
   // Process the recorded audio
   const processAudioInput = async (audioBlob: Blob) => {
     if (!apiKey || !isCallActive) {
-      console.log("Cannot process audio: no API key or call not active");
+      console.log("Não é possível processar áudio: sem chave API ou chamada não ativa");
       return;
     }
     
-    console.log("Processing audio input, blob size:", audioBlob.size);
+    console.log("Processando entrada de áudio, tamanho do blob:", audioBlob.size);
     setIsProcessing(true);
     
     try {
       // Transcribe the audio
-      console.log("Transcribing audio...");
+      console.log("Transcrevendo áudio...");
       const transcript = await transcribeAudio(audioBlob, apiKey);
-      console.log("Transcription result:", transcript);
+      console.log("Resultado da transcrição:", transcript);
       
       if (!transcript || transcript.trim() === "") {
-        console.log("No transcript detected, continuing to listen");
+        console.log("Nenhuma transcrição detectada, continuando a ouvir");
         if (isCallActive && !isSpeaking) {
           startStreamingRecording();
         }
@@ -337,11 +402,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       // Process the response
       await processResponse(transcript);
     } catch (error) {
-      console.error("Error processing audio:", error);
+      console.error("Erro ao processar áudio:", error);
       
       if (isCallActive) {
-        toast.error("Error processing audio", {
-          description: "Please try again."
+        toast.error("Erro ao processar áudio", {
+          description: "Por favor, tente novamente."
         });
         
         // Continue listening even after an error
@@ -357,11 +422,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   // Generate and handle the agent's response
   const processResponse = async (userMessage: string) => {
     if (!isCallActive || !apiKey) {
-      console.log("Cannot process response: call not active or missing API key");
+      console.log("Não é possível processar resposta: chamada não ativa ou chave API ausente");
       return;
     }
     
-    console.log("Processing response for user message:", userMessage);
+    console.log("Processando resposta para mensagem do usuário:", userMessage);
     
     const conversationHistory: OpenAIMessage[] = [
       { role: "system", content: agentConfig.systemPrompt },
@@ -377,7 +442,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     try {
       // Add space for the assistant's response
       const assistantId = addMessage("", "assistant");
-      console.log("Created assistant message with ID:", assistantId);
+      console.log("Criada mensagem do assistente com ID:", assistantId);
       
       // Configure streaming options
       const streamOptions: any = {
@@ -399,7 +464,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }));
       }
       
-      console.log("Starting OpenAI stream with options:", {
+      console.log("Iniciando stream da OpenAI com opções:", {
         model: streamOptions.model,
         temperature: streamOptions.temperature,
         max_tokens: streamOptions.maxTokens,
@@ -420,7 +485,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             }
           },
           onComplete: async (fullMessage) => {
-            console.log("OpenAI stream complete, generating speech for:", fullMessage.substring(0, 50) + "...");
+            console.log("Stream da OpenAI completo, gerando fala para:", fullMessage.substring(0, 50) + "...");
             // Generate audio for the response
             try {
               if (!isCallActive) return;
@@ -431,7 +496,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                 apiKey
               );
               
-              console.log("Speech generated successfully, buffer size:", audioBuffer.byteLength);
+              console.log("Fala gerada com sucesso, tamanho do buffer:", audioBuffer.byteLength);
               
               // Play the audio
               const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
@@ -444,7 +509,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                 
                 audioRef.current.src = audioUrl;
                 audioRef.current.play().catch(error => {
-                  console.error("Error playing audio:", error);
+                  console.error("Erro ao reproduzir áudio:", error);
                   // If audio fails to play, still continue the conversation
                   if (isCallActive && !isRecording) {
                     startStreamingRecording();
@@ -452,8 +517,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                 });
               }
             } catch (error) {
-              console.error("Error generating speech:", error);
-              toast.error("Could not generate speech");
+              console.error("Erro ao gerar fala:", error);
+              toast.error("Não foi possível gerar fala");
               
               // If we can't generate speech, continue listening
               if (isCallActive && !isRecording) {
@@ -464,9 +529,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             setIsProcessing(false);
           },
           onError: (error) => {
-            console.error("Error in AI response:", error);
+            console.error("Erro na resposta da IA:", error);
             if (updateMessage) {
-              updateMessage(assistantId, "Sorry, there was an error processing your request.");
+              updateMessage(assistantId, "Desculpe, houve um erro ao processar sua solicitação.");
             }
             
             setIsProcessing(false);
@@ -476,14 +541,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
               startStreamingRecording();
             }
             
-            toast.error("Error getting response", {
-              description: error instanceof Error ? error.message : "Please try again."
+            toast.error("Erro ao obter resposta", {
+              description: error instanceof Error ? error.message : "Por favor, tente novamente."
             });
           },
         }
       );
     } catch (error) {
-      console.error("Error getting response:", error);
+      console.error("Erro ao obter resposta:", error);
       setIsProcessing(false);
       
       // Continue listening even after an error
@@ -491,8 +556,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         startStreamingRecording();
       }
       
-      toast.error("Error processing response", {
-        description: "Could not get a response from the assistant."
+      toast.error("Erro ao processar resposta", {
+        description: "Não foi possível obter uma resposta do assistente."
       });
     }
   };
@@ -503,7 +568,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Voice functionality is disabled. Enable it in the agent settings.
+          A funcionalidade de voz está desativada. Habilite-a nas configurações do agente.
         </AlertDescription>
       </Alert>
     );
@@ -515,17 +580,25 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         <div className="flex justify-center mb-2">
           <div className="bg-primary/10 text-primary text-sm px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
             <Volume2 className="h-4 w-4" />
-            <span>Speaking...</span>
+            <span>Falando...</span>
           </div>
         </div>
       )}
       
+      {/* Audio visualization canvas - only show when recording */}
       {isRecording && (
-        <div className="flex justify-center mb-2">
-          <div className="bg-red-500/20 text-red-500 text-sm px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
+        <div className="flex flex-col items-center mb-2">
+          <div className="bg-red-500/20 text-red-500 text-sm px-3 py-1 rounded-full flex items-center gap-1 animate-pulse mb-2">
             <Mic className="h-4 w-4" />
-            <span>Listening...</span>
+            <span>Ouvindo...</span>
           </div>
+          
+          <canvas 
+            ref={canvasRef} 
+            width={300} 
+            height={60} 
+            className="w-full h-12 rounded-lg bg-black/5"
+          />
         </div>
       )}
       
@@ -533,10 +606,10 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         {isCallActive ? (
           <>
             <div className="text-sm text-center mb-2">
-              <p className="text-muted-foreground">Conversation in progress</p>
+              <p className="text-muted-foreground">Conversa em andamento</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {isRecording ? "Speak normally. Pause for the assistant to respond." : 
-                 isSpeaking ? "Assistant speaking..." : "Waiting..."}
+                {isRecording ? "Fale normalmente. Pause para que o assistente responda." : 
+                 isSpeaking ? "Assistente falando..." : "Aguardando..."}
               </p>
             </div>
             
@@ -550,7 +623,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             </Button>
             
             <p className="text-sm text-center text-muted-foreground mt-1">
-              Click to end conversation
+              Clique para encerrar a conversa
             </p>
           </>
         ) : (
@@ -568,7 +641,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             </div>
             
             <p className="text-sm text-center text-muted-foreground">
-              Click to start voice conversation
+              Clique para iniciar conversa por voz
             </p>
           </>
         )}
@@ -577,7 +650,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       {isProcessing && (
         <div className="flex items-center justify-center w-full p-2">
           <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
-          <span className="text-sm text-muted-foreground">Processing...</span>
+          <span className="text-sm text-muted-foreground">Processando...</span>
         </div>
       )}
     </div>

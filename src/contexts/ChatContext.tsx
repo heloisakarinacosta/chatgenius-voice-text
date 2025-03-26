@@ -257,6 +257,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return conv;
         });
       });
+      
+      // Also add the message to the database
+      database.addMessage(currentConversationId, newMessage).catch(err => {
+        console.error("Error adding message to database:", err);
+      });
     }
     
     return messageId;
@@ -289,73 +294,93 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Function to start a new conversation
-  const startNewConversation = () => {
-    const newConversationId = uuidv4();
-    setCurrentConversationId(newConversationId);
-    setMessages([]);
-    // Create the new conversation in state
-    setConversations(prev => [...prev, {
-      id: newConversationId,
-      messages: [],
-      isActive: true,
-      createdAt: new Date()
-    }]);
-    // Also create it in the database
-    database.createConversation(newConversationId).catch(err => {
-      console.error("Error creating new conversation:", err);
-    });
-  };
-  
-  // Function to send a message
-  const sendMessage = async (content: string) => {
-    if (!currentConversationId) {
-      // Create a new conversation if one doesn't exist
+  const startNewConversation = async () => {
+    try {
       const newConversationId = uuidv4();
-      const conversationCreated = await database.createConversation(newConversationId);
       
-      if (conversationCreated) {
+      // Create the conversation in database first
+      const success = await database.createConversation(newConversationId);
+      
+      if (success) {
         setCurrentConversationId(newConversationId);
+        setMessages([]);
+        
+        // Create the new conversation in state
         setConversations(prev => [...prev, {
           id: newConversationId,
           messages: [],
           isActive: true,
           createdAt: new Date()
         }]);
+        
+        console.log(`New conversation created with ID: ${newConversationId}`);
+        return newConversationId;
       } else {
+        console.error("Failed to create new conversation in database");
+        return null;
+      }
+    } catch (error) {
+      console.error("Error creating new conversation:", error);
+      return null;
+    }
+  };
+  
+  // Function to send a message
+  const sendMessage = async (content: string) => {
+    if (!currentConversationId) {
+      // Create a new conversation if one doesn't exist
+      const newConversationId = await startNewConversation();
+      
+      if (!newConversationId) {
         console.error('Failed to create new conversation');
+        toast.error("Erro ao criar conversa", {
+          description: "Tente novamente em alguns instantes."
+        });
         return false;
       }
     }
     
-    const newMessage = {
-      id: uuidv4(),
-      role: "user" as const,
-      content: content,
-      timestamp: new Date()
-    };
-    
-    const messageAdded = await database.addMessage(currentConversationId as string, newMessage);
-    
-    if (messageAdded) {
-      // Use the existing message object instead of creating a new one
-      setMessages(prev => [...prev, newMessage]);
+    try {
+      const newMessage = {
+        id: uuidv4(),
+        role: "user" as const,
+        content: content,
+        timestamp: new Date()
+      };
       
-      // Update conversation
-      setConversations(prev => {
-        return prev.map(conv => {
-          if (conv.id === currentConversationId) {
-            return {
-              ...conv,
-              messages: [...conv.messages, newMessage]
-            };
-          }
-          return conv;
+      // Add message to database
+      const messageAdded = await database.addMessage(currentConversationId, newMessage);
+      
+      if (messageAdded) {
+        // Add message to state
+        setMessages(prev => [...prev, newMessage]);
+        
+        // Update conversation
+        setConversations(prev => {
+          return prev.map(conv => {
+            if (conv.id === currentConversationId) {
+              return {
+                ...conv,
+                messages: [...conv.messages, newMessage]
+              };
+            }
+            return conv;
+          });
         });
+        
+        return true;
+      } else {
+        console.error('Failed to add message to conversation');
+        toast.error("Erro ao enviar mensagem", {
+          description: "Tente novamente em alguns instantes."
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast.error("Erro ao enviar mensagem", {
+        description: "Verifique sua conexão e tente novamente."
       });
-      
-      return true;
-    } else {
-      console.error('Failed to add message to conversation');
       return false;
     }
   };

@@ -29,7 +29,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     isWidgetOpen, 
     setIsWidgetOpen,
     isVoiceChatActive,
-    setIsVoiceChatActive
+    setIsVoiceChatActive,
+    currentConversationId
   } = useChat();
   
   const [inputValue, setInputValue] = useState("");
@@ -50,6 +51,13 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       inputRef.current.focus();
     }
   }, [isWidgetOpen, isVoiceChatActive]);
+
+  // Create a new conversation if none exists
+  useEffect(() => {
+    if (isWidgetOpen && !currentConversationId) {
+      startNewConversation();
+    }
+  }, [isWidgetOpen, currentConversationId, startNewConversation]);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,7 +78,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     if (inputValue.trim() === "") return;
     
     if (!apiKey) {
-      alert("Please set your OpenAI API key first");
+      alert("Por favor, configure sua chave de API OpenAI primeiro");
       return;
     }
     
@@ -79,9 +87,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setInputValue("");
     
     try {
+      // Ensure we have a conversation ID before trying to send a message
+      if (!currentConversationId) {
+        await startNewConversation();
+      }
+      
       await sendMessage(message);
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Erro ao enviar mensagem:", error);
     } finally {
       setIsLoading(false);
     }
@@ -164,8 +177,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
           onClick={toggleMinimize}
         >
           <div>
-            <h3 className="font-medium">{widgetConfig?.title || "Chat Assistant"}</h3>
-            <p className="text-sm opacity-90">{widgetConfig?.subtitle || "How can I help you today?"}</p>
+            <h3 className="font-medium">{widgetConfig?.title || "Assistente de Chat"}</h3>
+            <p className="text-sm opacity-90">{widgetConfig?.subtitle || "Como posso ajudar você hoje?"}</p>
           </div>
           <div className="flex items-center space-x-2">
             {isMinimized ? (
@@ -184,7 +197,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center">
                 <p className="text-muted-foreground text-sm text-center">
-                  Start a conversation by typing a message or using voice chat.
+                  Inicie uma conversa digitando uma mensagem ou usando o chat por voz.
                 </p>
               </div>
             ) : (
@@ -210,7 +223,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 variant="ghost"
                 className={`rounded-full p-2 ${isVoiceChatActive ? 'bg-primary/10 text-primary' : ''}`}
                 onClick={toggleVoiceChat}
-                title={isVoiceChatActive ? "Disable voice chat" : "Enable voice chat"}
+                title={isVoiceChatActive ? "Desativar chat por voz" : "Ativar chat por voz"}
               >
                 <Mic className="h-5 w-5" />
               </Button>
@@ -220,7 +233,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
+                placeholder="Digite sua mensagem..."
                 className="flex-1"
                 disabled={isLoading}
               />
@@ -248,7 +261,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 onClick={handleStartNewConversation}
               >
                 <RefreshCw className="h-3 w-3 mr-1" /> 
-                New conversation
+                Nova conversa
               </Button>
             </div>
           </div>

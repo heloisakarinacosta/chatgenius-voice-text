@@ -29,7 +29,7 @@ const Index = () => {
     
     try {
       setApiCheckInProgress(true);
-      console.log("Attempting to fetch API key from backend...");
+      console.log("Tentando buscar chave de API do backend...");
       // Add cache busting to prevent browser caching
       const cacheBuster = new Date().getTime();
       const timeoutPromise = new Promise((_, reject) => 
@@ -50,18 +50,18 @@ const Index = () => {
       
       if (!response.ok) {
         if (response.status === 404) {
-          console.log('API key not found on server, using from context');
+          console.log('Chave de API não encontrada no servidor, usando do contexto');
           return { apiKey: adminConfig?.apiKey || null };
         }
-        throw new Error(`Failed to fetch API key: ${response.status}`);
+        throw new Error(`Falha ao buscar chave de API: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log("Successfully retrieved API key from backend");
+      console.log("Chave de API obtida com sucesso do backend");
       return data;
     } catch (error) {
-      console.error('Error fetching API key:', error);
-      console.log("Falling back to context API key:", adminConfig?.apiKey ? "exists" : "not set");
+      console.error('Erro ao buscar chave de API:', error);
+      console.log("Usando chave de API do contexto:", adminConfig?.apiKey ? "existe" : "não definida");
       
       // Check if error is due to backend server not running
       if (error instanceof TypeError && error.message.includes('Failed to fetch') ||
@@ -70,8 +70,8 @@ const Index = () => {
         
         // Only show toast once
         if (!backendError) {
-          toast.error("Backend server is not running", {
-            description: "Configure the API Key directly in the app",
+          toast.error("Servidor backend não está em execução", {
+            description: "Configure a chave de API diretamente no aplicativo",
             duration: 10000,
           });
           
@@ -103,14 +103,14 @@ const Index = () => {
 
   useEffect(() => {
     if (apiKeyData) {
-      console.log("Setting API key from data:", apiKeyData.apiKey ? "API key exists" : "API key is null");
+      console.log("Definindo chave de API a partir dos dados:", apiKeyData.apiKey ? "Chave de API existe" : "Chave de API é nula");
       setApiKey(apiKeyData.apiKey);
     }
   }, [apiKeyData]);
 
   const handleSaveApiKey = async () => {
     if (!tempApiKey.trim()) {
-      toast.error("Please enter a valid API key");
+      toast.error("Por favor, insira uma chave de API válida");
       return;
     }
 
@@ -126,20 +126,20 @@ const Index = () => {
       if (success) {
         setApiKey(tempApiKey.trim());
         setShowSetupDialog(false);
-        toast.success("API key configured successfully");
+        toast.success("Chave de API configurada com sucesso");
       } else {
-        throw new Error('Failed to save API key');
+        throw new Error('Falha ao salvar chave de API');
       }
     } catch (error) {
-      console.error('Error saving API key:', error);
-      toast.error("Failed to save API key", {
-        description: "Try again or check your connection"
+      console.error('Erro ao salvar chave de API:', error);
+      toast.error("Falha ao salvar chave de API", {
+        description: "Tente novamente ou verifique sua conexão"
       });
     }
   };
 
   if (isApiKeyLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
   }
 
   return (
@@ -154,16 +154,16 @@ const Index = () => {
             </div>
             <div className="ml-3">
               <p className="text-sm text-yellow-700">
-                Backend server is not running. You can configure the API key directly in the application or access the admin page.
+                O servidor backend não está em execução. Você pode configurar a chave de API diretamente no aplicativo ou acessar a página de administração.
               </p>
             </div>
             <div className="ml-auto pl-3 flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowSetupDialog(true)}>
-                Configure API Key
+                Configurar Chave API
               </Button>
               <Link to="/admin">
                 <Button variant="default" size="sm">
-                  Go to Admin
+                  Ir para Admin
                 </Button>
               </Link>
             </div>
@@ -174,10 +174,10 @@ const Index = () => {
       <Dialog open={showSetupDialog} onOpenChange={setShowSetupDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Configure OpenAI API Key</DialogTitle>
+            <DialogTitle>Configurar Chave de API OpenAI</DialogTitle>
             <DialogDescription>
-              Enter your OpenAI API key to use the chat assistant.
-              This key will be stored locally in your browser.
+              Insira sua chave de API OpenAI para usar o assistente de chat.
+              Esta chave será armazenada localmente no seu navegador.
             </DialogDescription>
           </DialogHeader>
           <div className="my-4">
@@ -189,15 +189,15 @@ const Index = () => {
               onChange={(e) => setTempApiKey(e.target.value)}
             />
             <p className="text-sm text-gray-500 mt-2">
-              You can get your API key at
+              Você pode obter sua chave de API em
               <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-500 ml-1">
                 platform.openai.com/api-keys
               </a>
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSetupDialog(false)}>Cancel</Button>
-            <Button onClick={handleSaveApiKey}>Save API Key</Button>
+            <Button variant="outline" onClick={() => setShowSetupDialog(false)}>Cancelar</Button>
+            <Button onClick={handleSaveApiKey}>Salvar Chave API</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

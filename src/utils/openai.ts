@@ -201,7 +201,7 @@ export async function callOpenAI(
         return callOpenAI(updatedOptions, apiKey, functionCallbacks);
       }
       
-      return `The function ${functionName} was called with parameters: ${JSON.stringify(parameters)}, but no handler was provided.`;
+      return `A função ${functionName} foi chamada com os parâmetros: ${JSON.stringify(parameters)}, mas nenhum manipulador foi fornecido.`;
     }
     
     return data.choices[0].message.content;
