@@ -139,11 +139,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         toast.error("Erro ao enviar mensagem", {
           description: "Não foi possível comunicar com o servidor. Tente novamente."
         });
+        return; // Exit early if the server communication failed
       } else {
         console.log("Message sent successfully");
         
         // After successfully sending the message to the server, directly call OpenAI
-        getAssistantResponse(message);
+        await getAssistantResponse();
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -157,7 +158,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
   
   // Function to get assistant response directly from OpenAI
-  const getAssistantResponse = async (userMessage: string) => {
+  const getAssistantResponse = async () => {
     if (!apiKey || !currentConversationId) return;
     
     try {

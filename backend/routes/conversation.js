@@ -114,12 +114,8 @@ router.post('/', async (req, res) => {
       [id, true, new Date()]
     );
     
-    // Add a welcome message for the new conversation
-    const welcomeMessageId = uuidv4();
-    await pool.query(
-      'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-      [welcomeMessageId, id, 'assistant', 'Olá! Como posso ajudar você hoje?', new Date()]
-    );
+    // Removed the welcome message creation to prevent duplicate messages
+    // Now the client will be responsible for creating all messages
     
     console.log(`New conversation created with ID: ${id}`);
     
