@@ -16,6 +16,7 @@ import {
   Maximize2,
   Minimize2
 } from "lucide-react";
+import { callOpenAI } from "@/utils/openai";
 
 interface ChatWidgetProps {
   apiKey: string | null;
@@ -26,13 +27,15 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     messages, 
     sendMessage, 
     addMessage,
+    updateMessage,
     startNewConversation,
     widgetConfig, 
     isWidgetOpen, 
     setIsWidgetOpen,
     isVoiceChatActive,
     setIsVoiceChatActive,
-    currentConversationId
+    currentConversationId,
+    agentConfig
   } = useChat();
   
   const [inputValue, setInputValue] = useState("");
@@ -138,6 +141,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         });
       } else {
         console.log("Message sent successfully");
+        
+        // After successfully sending the message to the server, directly call OpenAI
+        getAssistantResponse(message);
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -147,6 +153,49 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  // Function to get assistant response directly from OpenAI
+  const getAssistantResponse = async (userMessage: string) => {
+    if (!apiKey || !currentConversationId) return;
+    
+    try {
+      // Collect all messages in the conversation to maintain context
+      const conversationMessages = messages.map(msg => ({
+        role: msg.role as "user" | "assistant" | "system",
+        content: msg.content
+      }));
+      
+      // Add system prompt from agent config
+      if (agentConfig?.systemPrompt) {
+        conversationMessages.unshift({
+          role: "system",
+          content: agentConfig.systemPrompt
+        });
+      }
+      
+      // Create a temporary message ID for the assistant response
+      const tempAssistantId = addMessage("...", "assistant");
+      
+      // Call OpenAI directly
+      const response = await callOpenAI({
+        messages: conversationMessages,
+        model: agentConfig?.model || "gpt-4o-mini",
+        temperature: agentConfig?.temperature || 0.7,
+        trainingFiles: agentConfig?.trainingFiles || [],
+        detectEmotion: agentConfig?.detectEmotion || false
+      }, apiKey);
+      
+      // Update the temporary message with the actual response
+      updateMessage(tempAssistantId, response);
+      
+      console.log("Received response from OpenAI:", response.substring(0, 50) + "...");
+    } catch (error) {
+      console.error("Error getting assistant response:", error);
+      toast.error("Erro ao obter resposta do assistente", {
+        description: "Verifique sua chave API e tente novamente."
+      });
     }
   };
   

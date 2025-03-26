@@ -212,19 +212,6 @@ router.post('/:id/messages', async (req, res) => {
       
       console.log('Message added successfully to database');
       
-      // If the message is from the user, generate an auto-response
-      if (role === 'user') {
-        const assistantMessageId = uuidv4();
-        const assistantContent = "Obrigado por sua mensagem! O assistente está processando sua pergunta e responderá em instantes.";
-        
-        await pool.query(
-          'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-          [assistantMessageId, id, 'assistant', assistantContent, new Date()]
-        );
-        
-        console.log('Auto-response message added to conversation');
-      }
-      
       res.json({ 
         success: true, 
         message: 'Message added successfully',
