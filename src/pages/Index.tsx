@@ -91,7 +91,7 @@ const Index = () => {
 
   // Fetch API key from backend, with reduced stale time and cache time
   // Updated to use gcTime instead of cacheTime for React Query v5+
-  const { data: apiKeyData, isLoading: isApiKeyLoading, error: apiKeyError } = useQuery({
+  const { data: apiKeyData, isLoading: isApiKeyLoading } = useQuery({
     queryKey: ['apiKey'],
     queryFn: fetchApiKey,
     retry: 1, // Only retry once to avoid too many failed requests
@@ -201,12 +201,6 @@ const Index = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {apiKeyError && (
-        <div className="p-4 text-sm text-red-500 bg-red-50 rounded m-4">
-          Error loading API key: {apiKeyError.toString()}
-        </div>
-      )}
 
       <ChatWidget apiKey={apiKey} />
     </div>
