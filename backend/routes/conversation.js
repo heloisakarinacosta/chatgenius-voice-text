@@ -113,12 +113,20 @@ router.post('/:id/messages', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if id is null or undefined
+    // Check if id is null, undefined, or the string "null"/"undefined"
     if (!id || id === 'null' || id === 'undefined') {
+      console.error('Invalid conversation ID received:', id);
       return res.status(400).json({ error: 'Invalid conversation ID' });
     }
     
     const { role, content } = req.body;
+    
+    // Validate required fields
+    if (!role || !content) {
+      console.error('Missing required fields:', { role, contentLength: content?.length });
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
     const messageId = req.body.id || uuidv4();
     
     const pool = db.getDbConnection();
@@ -126,10 +134,20 @@ router.post('/:id/messages', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
     
+    // Log received data for debugging
+    console.log('Adding message to conversation:', {
+      conversationId: id,
+      messageId,
+      role,
+      contentSample: content ? content.substring(0, 50) + '...' : 'undefined'
+    });
+    
     await pool.query(
       'INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
       [messageId, id, role, content, new Date()]
     );
+    
+    console.log('Message added successfully to database');
     
     res.json({ 
       success: true, 
@@ -138,7 +156,7 @@ router.post('/:id/messages', async (req, res) => {
     });
   } catch (error) {
     console.error('Error adding message:', error);
-    res.status(500).json({ error: 'Failed to add message' });
+    res.status(500).json({ error: 'Failed to add message', details: error.message });
   }
 });
 

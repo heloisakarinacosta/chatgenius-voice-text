@@ -5,6 +5,7 @@ import ChatBubble from "@/components/ChatBubble";
 import VoiceChatAgent from "@/components/VoiceChatAgent";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { 
   Send, 
   Mic, 
@@ -24,6 +25,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const { 
     messages, 
     sendMessage, 
+    addMessage,
     startNewConversation,
     widgetConfig, 
     isWidgetOpen, 
@@ -36,6 +38,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [errorSending, setErrorSending] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,7 +58,10 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   // Create a new conversation if none exists
   useEffect(() => {
     if (isWidgetOpen && !currentConversationId) {
-      startNewConversation();
+      console.log("No conversation ID found, creating a new one");
+      startNewConversation().then(id => {
+        console.log("Created new conversation with ID:", id);
+      });
     }
   }, [isWidgetOpen, currentConversationId, startNewConversation]);
   
@@ -65,6 +71,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
+    setErrorSending(false);
   };
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -78,30 +85,68 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     if (inputValue.trim() === "") return;
     
     if (!apiKey) {
-      alert("Por favor, configure sua chave de API OpenAI primeiro");
+      toast.error("Configure sua chave API OpenAI primeiro", {
+        description: "Vá para configurações para adicionar sua chave API"
+      });
       return;
     }
     
     setIsLoading(true);
-    const message = inputValue;
+    const message = inputValue.trim();
     setInputValue("");
     
     try {
-      // Ensure we have a conversation ID before trying to send a message
+      console.log("Sending message, current conversation ID:", currentConversationId);
+      
+      // Add message optimistically to UI first for better UX
+      const tempMessageId = addMessage(message, "user");
+      console.log("Added message to UI with temp ID:", tempMessageId);
+      
+      // Ensure we have a conversation ID before trying to send to the server
       if (!currentConversationId) {
-        await startNewConversation();
+        console.log("No conversation ID, creating new conversation");
+        const newId = await startNewConversation();
+        if (!newId) {
+          throw new Error("Falha ao criar nova conversa");
+        }
+        console.log("Created new conversation with ID:", newId);
       }
       
-      await sendMessage(message);
+      // Now send the message to the server
+      const success = await sendMessage(message);
+      
+      if (!success) {
+        console.error("Failed to send message to server");
+        setErrorSending(true);
+        toast.error("Erro ao enviar mensagem", {
+          description: "Não foi possível comunicar com o servidor. Tente novamente."
+        });
+      } else {
+        console.log("Message sent successfully");
+      }
     } catch (error) {
       console.error("Erro ao enviar mensagem:", error);
+      setErrorSending(true);
+      toast.error("Erro ao enviar mensagem", {
+        description: "Verifique sua conexão e tente novamente."
+      });
     } finally {
       setIsLoading(false);
     }
   };
   
-  const handleStartNewConversation = () => {
-    startNewConversation();
+  const handleStartNewConversation = async () => {
+    setIsLoading(true);
+    try {
+      console.log("Starting new conversation");
+      await startNewConversation();
+      toast.success("Nova conversa iniciada");
+    } catch (error) {
+      console.error("Error starting new conversation:", error);
+      toast.error("Erro ao iniciar nova conversa");
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   const toggleWidget = () => {
@@ -253,12 +298,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
               </Button>
             </div>
             
+            {errorSending && (
+              <div className="mt-2 text-xs text-red-500">
+                Erro ao enviar mensagem. Tente novamente.
+              </div>
+            )}
+            
             <div className="flex justify-center mt-3">
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className="text-xs text-muted-foreground"
                 onClick={handleStartNewConversation}
+                disabled={isLoading}
               >
                 <RefreshCw className="h-3 w-3 mr-1" /> 
                 Nova conversa
