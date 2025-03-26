@@ -2,9 +2,35 @@
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Mic, StopCircle, RefreshCw } from "lucide-react";
+import { Mic, StopCircle, RefreshCw, VolumeX, Volume1, Volume2, Clock } from "lucide-react";
 import { useChat } from "@/contexts/ChatContext";
-import { transcribeAudio, generateSpeech, callOpenAI } from "@/utils/openai";
+import { 
+  transcribeAudio, 
+  generateSpeech, 
+  streamOpenAI,
+  callOpenAI
+} from "@/utils/openai";
+import { 
+  Slider 
+} from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { VoiceControls } from "./voice-chat/VoiceControls";
+import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
+
+const VOICES = [
+  { id: 'alloy', name: 'Alloy (Neutro)' },
+  { id: 'echo', name: 'Echo (Masculino)' },
+  { id: 'fable', name: 'Fable (Feminino)' },
+  { id: 'onyx', name: 'Onyx (Masculino Grave)' },
+  { id: 'nova', name: 'Nova (Feminino Suave)' },
+  { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
+];
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -16,11 +42,13 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const processingAudioRef = useRef<boolean>(false);
   const lastProcessTimeRef = useRef<number>(0);
+  const currentResponseRef = useRef<string>("");
+  const currentStreamingMessageId = useRef<string | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const MAX_RETRIES = 3;
   
   const { 
     addMessage, 
@@ -29,6 +57,19 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     messages,
     currentConversationId
   } = useChat();
+
+  // Use our custom hook for speech playback
+  const { 
+    audioRef,
+    volume, 
+    setVolume,
+    playbackRate, 
+    setPlaybackRate,
+    selectedVoice, 
+    setSelectedVoice,
+    playAudio,
+    isPlaying
+  } = useSpeechPlayer(agentConfig?.voice?.voiceId || 'alloy');
 
   useEffect(() => {
     console.log("VoiceChatAgent: API key present:", !!apiKey);
@@ -109,7 +150,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
 
   const setupSilenceDetection = (stream: MediaStream) => {
     try {
-      // Usar AnalyserNode em vez de ScriptProcessorNode para minimizar alertas de depreciação
+      // Usar AnalyserNode em vez de ScriptProcessorNode
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
@@ -211,6 +252,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     }
     
     setIsProcessing(true);
+    retryCountRef.current = 0;
     
     try {
       // Create an object URL for the audio blob for preview
@@ -219,7 +261,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       // Transcribe audio using OpenAI Whisper
       console.log("Enviando áudio para transcrição...");
-      const transcription = await transcribeAudio(audioBlob, apiKey);
+      const transcription = await transcribeAudioWithRetry(audioBlob);
       console.log("Transcrição recebida:", transcription);
       
       if (!transcription || transcription.trim() === "") {
@@ -235,8 +277,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       // Add a temporary assistant message that will be updated
       const assistantMessageId = addMessage("...", "assistant");
+      currentStreamingMessageId.current = assistantMessageId;
       
-      // Process the message with OpenAI
+      // Reset accumulated response
+      currentResponseRef.current = "";
+      
+      // Process the message with OpenAI using streaming
       const systemPrompt = agentConfig?.systemPrompt || "Você é um assistente útil.";
       
       // Collect all messages for context
@@ -257,71 +303,143 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         content: transcription
       });
       
-      // Get response from OpenAI
-      const assistantResponse = await callOpenAI({
+      // Get streaming response from OpenAI
+      await streamOpenAI({
         messages: conversationMessages,
         model: agentConfig?.model || "gpt-4o-mini",
         temperature: agentConfig?.temperature || 0.7,
         trainingFiles: agentConfig?.trainingFiles || [],
-        detectEmotion: agentConfig?.detectEmotion || false
-      }, apiKey);
-      
-      console.log("Resposta do assistente:", assistantResponse.substring(0, 50) + "...");
-      
-      // Update the temporary message with the actual response
-      updateMessage(assistantMessageId, assistantResponse);
-      
-      // Generate and play the speech response if voice is enabled
-      if (agentConfig?.voice?.enabled && assistantResponse) {
-        try {
-          const voiceId = agentConfig.voice.voiceId || "alloy";
-          console.log("Gerando resposta de voz com voz:", voiceId);
+        detectEmotion: agentConfig?.detectEmotion || false,
+        stream: true
+      }, apiKey, {
+        onMessage: (chunk) => {
+          // Accumulate response
+          currentResponseRef.current += chunk;
           
-          const speechAudioBuffer = await generateSpeech(
-            assistantResponse, 
-            voiceId, 
-            apiKey
-          );
+          // Update message in real-time
+          updateMessage(assistantMessageId, currentResponseRef.current);
           
-          const speechBlob = new Blob([speechAudioBuffer], { type: 'audio/mpeg' });
-          const speechURL = URL.createObjectURL(speechBlob);
-          
-          if (audioRef.current) {
-            audioRef.current.src = speechURL;
-            audioRef.current.play();
+          // Se temos uma frase completa, começamos a gerar áudio
+          if (
+            // Detectar finais de frases (termina com . ! ? ou múltiplos espaços)
+            (chunk.includes('.') || chunk.includes('!') || chunk.includes('?') || 
+             chunk.includes('\n\n') || chunk.includes('. ')) && 
+            // Garantir que temos conteúdo suficiente para começar a síntese de voz
+            currentResponseRef.current.length > 50 &&
+            // Garantir que não estamos já tocando áudio
+            !isPlaying
+          ) {
+            // Gerar e reproduzir áudio para o conteúdo atual
+            generateAndPlaySpeech(currentResponseRef.current, selectedVoice);
           }
-        } catch (speechError) {
-          console.error("Erro ao gerar fala:", speechError);
+        },
+        onComplete: async (fullMessage) => {
+          console.log("Resposta completa recebida:", fullMessage.substring(0, 50) + "...");
+          
+          // Atualizar mensagem com resposta completa
+          updateMessage(assistantMessageId, fullMessage);
+          
+          // Gerar áudio para resposta completa se ainda não tiver sido gerado
+          if (agentConfig?.voice?.enabled && fullMessage) {
+            generateAndPlaySpeech(fullMessage, selectedVoice);
+          }
+          
+          setIsProcessing(false);
+          processingAudioRef.current = false;
+          currentStreamingMessageId.current = null;
+        },
+        onError: (error) => {
+          console.error("Erro ao obter resposta em streaming:", error);
+          toast.error("Erro ao obter resposta do assistente", {
+            description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido"
+          });
+          setIsProcessing(false);
+          processingAudioRef.current = false;
+          currentStreamingMessageId.current = null;
         }
-      }
+      });
     } catch (error) {
       console.error("Erro ao processar áudio:", error);
       toast.error("Erro ao processar áudio", {
         description: error instanceof Error ? error.message : "Ocorreu um erro desconhecido"
       });
-    } finally {
       setIsProcessing(false);
       processingAudioRef.current = false;
     }
   };
 
+  const transcribeAudioWithRetry = async (audioBlob: Blob): Promise<string> => {
+    try {
+      return await transcribeAudio(audioBlob, apiKey);
+    } catch (error) {
+      retryCountRef.current += 1;
+      if (retryCountRef.current <= MAX_RETRIES) {
+        console.log(`Tentativa ${retryCountRef.current} de transcrição falhou, tentando novamente...`);
+        toast.warning(`Tentativa de transcrição falhou, tentando novamente (${retryCountRef.current}/${MAX_RETRIES})...`);
+        // Aguarda um curto período antes de tentar novamente (backoff exponencial)
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCountRef.current));
+        return transcribeAudioWithRetry(audioBlob);
+      } else {
+        console.error("Número máximo de tentativas excedido");
+        throw error;
+      }
+    }
+  };
+
+  const generateAndPlaySpeech = async (text: string, voiceId: string) => {
+    if (!agentConfig?.voice?.enabled) return;
+    
+    try {
+      console.log("Gerando resposta de voz com voz:", voiceId);
+      
+      const speechAudioBuffer = await generateSpeech(
+        text, 
+        voiceId, 
+        apiKey
+      );
+      
+      const speechBlob = new Blob([speechAudioBuffer], { type: 'audio/mpeg' });
+      const speechURL = URL.createObjectURL(speechBlob);
+      
+      // Usar o hook para reproduzir o áudio
+      playAudio(speechURL);
+    } catch (speechError) {
+      console.error("Erro ao gerar fala:", speechError);
+      toast.error("Erro ao gerar fala", {
+        description: "Não foi possível sintetizar a resposta em áudio."
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col space-y-4">
-      <div className="flex items-center justify-center space-x-2">
-        <Button
-          onClick={isRecording ? stopRecording : startRecording}
-          variant={isRecording ? "destructive" : "default"}
-          className={`rounded-full w-12 h-12 p-0 ${isRecording ? 'animate-pulse' : ''}`}
-          disabled={isProcessing}
-        >
-          {isRecording ? (
-            <StopCircle className="h-6 w-6" />
-          ) : isProcessing ? (
-            <RefreshCw className="h-6 w-6 animate-spin" />
-          ) : (
-            <Mic className="h-6 w-6" />
-          )}
-        </Button>
+      <div className="flex justify-between items-center mb-2">
+        <div className="flex items-center space-x-2">
+          <Button
+            onClick={isRecording ? stopRecording : startRecording}
+            variant={isRecording ? "destructive" : "default"}
+            className={`rounded-full w-12 h-12 p-0 ${isRecording ? 'animate-pulse' : ''}`}
+            disabled={isProcessing}
+          >
+            {isRecording ? (
+              <StopCircle className="h-6 w-6" />
+            ) : isProcessing ? (
+              <RefreshCw className="h-6 w-6 animate-spin" />
+            ) : (
+              <Mic className="h-6 w-6" />
+            )}
+          </Button>
+        </div>
+        
+        <VoiceControls 
+          volume={volume} 
+          setVolume={setVolume}
+          playbackRate={playbackRate}
+          setPlaybackRate={setPlaybackRate}
+          selectedVoice={selectedVoice}
+          setSelectedVoice={setSelectedVoice}
+          voices={VOICES}
+        />
       </div>
       
       {isRecording && (
@@ -337,7 +455,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       )}
       
       {audioURL && (
-        <audio ref={audioRef} className="hidden" controls />
+        <audio ref={audioRef} className="hidden" />
       )}
     </div>
   );
