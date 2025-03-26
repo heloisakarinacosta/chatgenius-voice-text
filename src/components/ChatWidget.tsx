@@ -42,6 +42,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [errorSending, setErrorSending] = useState(false);
   const [processingMessage, setProcessingMessage] = useState(false);
+  const [messageBeingSent, setMessageBeingSent] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -94,7 +95,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
   
   const handleSendMessage = async () => {
-    if (inputValue.trim() === "" || isLoading || processingMessage) return;
+    const message = inputValue.trim();
+    
+    if (!message || isLoading || processingMessage || message === messageBeingSent) {
+      return;
+    }
     
     if (!apiKey) {
       toast.error("Configure sua chave API OpenAI primeiro", {
@@ -106,7 +111,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     setIsLoading(true);
     setProcessingMessage(true);
     setErrorSending(false);
-    const message = inputValue.trim();
+    setMessageBeingSent(message);
     setInputValue("");
     
     try {
@@ -148,6 +153,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     } finally {
       setIsLoading(false);
       setProcessingMessage(false);
+      setMessageBeingSent(null);
     }
   };
   
@@ -338,7 +344,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 variant="default"
                 className="rounded-full p-2"
                 onClick={handleSendMessage}
-                disabled={isLoading || processingMessage || inputValue.trim() === ""}
+                disabled={isLoading || processingMessage || inputValue.trim() === "" || inputValue === messageBeingSent}
               >
                 {isLoading || processingMessage ? (
                   <RefreshCw className="h-5 w-5 animate-spin" />

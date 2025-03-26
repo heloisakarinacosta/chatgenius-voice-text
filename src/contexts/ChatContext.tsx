@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as database from "@/services/databaseService";
@@ -238,17 +237,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addMessage = (content: string, role: "user" | "assistant" | "system"): string => {
     const messageId = uuidv4();
     
-    // Check if this exact message already exists to prevent duplicates
-    const duplicateMessage = messages.find(msg => 
+    // Enhanced duplicate message detection
+    // Check if the exact same message from the same role exists in the last 10 seconds
+    const recentDuplicateMessage = messages.find(msg => 
       msg.role === role && 
       msg.content === content &&
-      // Only consider messages from the last 5 seconds as potential duplicates
-      new Date().getTime() - msg.timestamp.getTime() < 5000
+      new Date().getTime() - msg.timestamp.getTime() < 10000
     );
     
-    if (duplicateMessage) {
+    if (recentDuplicateMessage) {
       console.log("Duplicate message detected, skipping:", content.substring(0, 30));
-      return duplicateMessage.id;
+      return recentDuplicateMessage.id;
     }
     
     const newMessage: Message = {
@@ -258,13 +257,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       timestamp: new Date()
     };
     
-    setMessages(prev => [...prev, newMessage]);
+    setMessages(prev => {
+      // Double-check to make sure we're not adding a duplicate message
+      const isDuplicate = prev.some(msg => 
+        msg.role === role && 
+        msg.content === content && 
+        new Date().getTime() - msg.timestamp.getTime() < 10000
+      );
+      
+      if (isDuplicate) {
+        console.log("Last-minute duplicate detection prevented adding:", content.substring(0, 30));
+        return prev;
+      }
+      
+      return [...prev, newMessage];
+    });
     
     // Update conversation if it exists
     if (currentConversationId) {
       setConversations(prev => {
         return prev.map(conv => {
           if (conv.id === currentConversationId) {
+            // Check for duplicates in the current conversation
+            const isDuplicate = conv.messages.some(msg => 
+              msg.role === role && 
+              msg.content === content && 
+              new Date().getTime() - new Date(msg.timestamp).getTime() < 10000
+            );
+            
+            if (isDuplicate) {
+              console.log("Duplicate prevented in conversation:", content.substring(0, 30));
+              return conv;
+            }
+            
             return {
               ...conv,
               messages: [...conv.messages, newMessage]
@@ -274,7 +299,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       });
       
-      // Also add the message to the database
+      // Also add the message to the database if not a duplicate
       database.addMessage(currentConversationId, newMessage).catch(err => {
         console.error("Error adding message to database:", err);
       });
@@ -356,6 +381,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     
+    // Check for duplicate messages in the current session (last 10 seconds)
+    const recentDuplicate = messages.find(msg => 
+      msg.role === "user" && 
+      msg.content === content && 
+      new Date().getTime() - msg.timestamp.getTime() < 10000
+    );
+    
+    if (recentDuplicate) {
+      console.log("Prevented duplicate message from being sent:", content.substring(0, 30));
+      return true; // Pretend success to avoid error messages
+    }
+    
     try {
       const newMessage = {
         id: uuidv4(),
@@ -368,13 +405,38 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const messageAdded = await database.addMessage(currentConversationId, newMessage);
       
       if (messageAdded) {
-        // Add message to state
-        setMessages(prev => [...prev, newMessage]);
+        // Update state only after successful database operation
+        setMessages(prev => {
+          // Final duplicate check before adding to messages
+          const isDuplicate = prev.some(msg => 
+            msg.role === "user" && 
+            msg.content === content && 
+            new Date().getTime() - msg.timestamp.getTime() < 10000
+          );
+          
+          if (isDuplicate) {
+            console.log("Last-second duplicate prevention:", content.substring(0, 30));
+            return prev;
+          }
+          
+          return [...prev, newMessage];
+        });
         
-        // Update conversation
+        // Update conversation with the same duplicate check
         setConversations(prev => {
           return prev.map(conv => {
             if (conv.id === currentConversationId) {
+              // Check for duplicates in current conversation
+              const isDuplicate = conv.messages.some(msg => 
+                msg.role === "user" && 
+                msg.content === content && 
+                new Date().getTime() - new Date(msg.timestamp).getTime() < 10000
+              );
+              
+              if (isDuplicate) {
+                return conv;
+              }
+              
               return {
                 ...conv,
                 messages: [...conv.messages, newMessage]
