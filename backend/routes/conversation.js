@@ -192,6 +192,26 @@ router.post('/:id/messages', async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found and could not be created' });
     }
     
+    // Check if this message ID already exists to avoid duplicates
+    try {
+      const [existingMessageRows] = await pool.query(
+        'SELECT id FROM messages WHERE id = ?',
+        [messageId]
+      );
+      
+      if (existingMessageRows && existingMessageRows.length > 0) {
+        console.log(`Message with ID ${messageId} already exists, skipping insertion`);
+        return res.json({ 
+          success: true, 
+          message: 'Message already exists',
+          id: messageId
+        });
+      }
+    } catch (error) {
+      console.error('Error checking message existence:', error);
+      // Continue with insertion attempt even if check fails
+    }
+    
     // Log received data for debugging
     console.log('Adding message to conversation:', {
       conversationId: id,

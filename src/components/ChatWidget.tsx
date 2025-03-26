@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { useChat } from "@/contexts/ChatContext";
 import ChatBubble from "@/components/ChatBubble";
@@ -98,7 +97,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
   
   const handleSendMessage = async () => {
-    if (inputValue.trim() === "") return;
+    if (inputValue.trim() === "" || isLoading) return;
     
     if (!apiKey) {
       toast.error("Configure sua chave API OpenAI primeiro", {
@@ -340,6 +339,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
                 className={`rounded-full p-2 ${isVoiceChatActive ? 'bg-primary/10 text-primary' : ''}`}
                 onClick={toggleVoiceChat}
                 title={isVoiceChatActive ? "Desativar chat por voz" : "Ativar chat por voz"}
+                disabled={isLoading}
               >
                 <Mic className="h-5 w-5" />
               </Button>
