@@ -12,6 +12,7 @@ import {
 } from "@/utils/openai";
 import { VoiceControls } from "./voice-chat/VoiceControls";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
+import { VoiceSettings } from "./voice-chat/VoiceSettings";
 
 const VOICES = [
   { id: 'alloy', name: 'Alloy (Neutro)' },
@@ -24,7 +25,6 @@ const VOICES = [
 
 // Silence detection settings
 const SILENCE_THRESHOLD = 10; // Volume below which is considered silence
-const SILENCE_DURATION = 1500; // 1.5 seconds of silence to consider a conversational pause
 const MIN_RECORDING_DURATION = 500; // Minimum recording duration to avoid processing very short noises
 const MAX_RECORDING_DURATION = 20000; // Maximum recording duration (20 seconds)
 
@@ -37,6 +37,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -59,8 +60,21 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateMessage,
     agentConfig,
     messages,
-    currentConversationId
+    currentConversationId,
+    updateAgentConfig
   } = useChat();
+
+  // Valor padrão para a configuração de silêncio se não existir na configuração
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 10;
+  const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
+  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.4;
+  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
+  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 1.5;
+  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.5;
+  const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
+
+  // Calcular SILENCE_DURATION baseado na configuração
+  const SILENCE_DURATION = silenceTimeout * 1000;
 
   // Use our custom hook for speech playback
   const { 
@@ -119,7 +133,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       setupAudioAnalysis(stream);
       
       // Create and setup media recorder
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = mediaRecorder;
       
       mediaRecorder.ondataavailable = (event) => {
@@ -140,8 +154,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
+        // Importante: Garantir que o tipo MIME seja explicitamente definido e suportado pela OpenAI
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        console.log("Audio blob size:", audioBlob.size, "bytes");
+        console.log("Audio blob size:", audioBlob.size, "bytes", "type:", audioBlob.type);
         
         // Skip processing if recording is too short or API key is missing
         if (audioBlob.size < 1000 || !apiKey || recordingLength < MIN_RECORDING_DURATION) {
@@ -153,7 +168,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         // Process the recorded audio
-        processAudioBlob(audioBlob);
+        await processAudioBlob(audioBlob);
         
         // Clean up for next recording
         audioChunksRef.current = [];
@@ -310,15 +325,33 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       const audioURL = URL.createObjectURL(audioBlob);
       setAudioURL(audioURL);
       
-      // Transcribe audio using OpenAI Whisper
+      // Converter o blob para formato MP3 ou WAV se necessário
       console.log("Sending audio for transcription...");
-      const transcription = await transcribeAudioWithRetry(audioBlob);
+      let transcriptionBlob = audioBlob;
+      
+      // Verificar se o formato é suportado pela API de transcrição da OpenAI
+      const supportedFormats = ['audio/flac', 'audio/m4a', 'audio/mp3', 'audio/mp4', 'audio/mpeg', 'audio/mpga', 'audio/oga', 'audio/ogg', 'audio/wav', 'audio/webm'];
+      
+      if (!supportedFormats.includes(audioBlob.type)) {
+        console.log(`Formato de áudio ${audioBlob.type} não é explicitamente suportado. Usando como está, mas pode falhar.`);
+      }
+      
+      const transcription = await transcribeAudioWithRetry(transcriptionBlob);
       console.log("Transcription received:", transcription);
       
       if (!transcription || transcription.trim() === "") {
         console.log("Empty transcription, ignoring");
         setIsProcessing(false);
         processingAudioRef.current = false;
+        
+        // Automaticamente voltar a gravar após uma transcrição vazia
+        setTimeout(() => {
+          if (!isRecording && !isPlaying) {
+            console.log("Auto-restarting recording after empty transcription");
+            startRecording();
+          }
+        }, 500);
+        
         return;
       }
       
@@ -364,22 +397,27 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         stream: true
       }, apiKey, {
         onMessage: async (chunk) => {
-          // Accumulate response
+          // Acumular resposta
           currentResponseRef.current += chunk;
           
-          // Update message in real-time
+          // Atualizar mensagem em tempo real
           updateMessage(assistantMessageId, currentResponseRef.current);
           
-          // Start generating audio when we have a complete sentence or significant pause
-          if (
-            // Detect sentence endings or significant pauses
-            (chunk.includes('.') || chunk.includes('!') || chunk.includes('?') || 
-             chunk.includes('\n\n') || chunk.includes('. ')) && 
-            // Ensure we have enough content to start voice synthesis
-            currentResponseRef.current.length > 20 &&
-            // Don't generate speech for very small chunks
-            chunk.length > 5
-          ) {
+          // Determinar se devemos gerar áudio com base nas configurações de pausas
+          const shouldGenerateSpeech = (
+            // Verificar marcas de pontuação com pausa configurada
+            (chunk.includes('.') && currentResponseRef.current.length > waitAfterPunctuation * 100) ||
+            (chunk.includes('!') && currentResponseRef.current.length > waitAfterPunctuation * 100) ||
+            (chunk.includes('?') && currentResponseRef.current.length > waitAfterPunctuation * 100) ||
+            // Verificar quebras de parágrafo com pausa maior
+            (chunk.includes('\n\n') && currentResponseRef.current.length > waitWithoutPunctuation * 100) ||
+            // Verificar números com pausa específica
+            (/\d+/.test(chunk) && currentResponseRef.current.length > waitAfterNumber * 100) ||
+            // Se não tiver pontuação mas tiver conteúdo suficiente
+            (!/[.!?\n]/.test(chunk) && currentResponseRef.current.length > waitWithoutPunctuation * 100 && chunk.length > 20)
+          );
+          
+          if (shouldGenerateSpeech) {
             try {
               console.log("Generating speech for sentence:", currentResponseRef.current);
               const speechAudioBuffer = await generateSpeech(
@@ -390,6 +428,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
               
               const speechBlob = new Blob([speechAudioBuffer], { type: 'audio/mpeg' });
               const speechURL = URL.createObjectURL(speechBlob);
+              
+              // Esperar o tempo configurado antes de começar a falar
+              await new Promise(resolve => setTimeout(resolve, waitBeforeSpeaking * 1000));
               
               // Play the synthesized speech, passing the text for deduplication
               playStreamingText(speechURL, currentResponseRef.current, false);
@@ -483,6 +524,23 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  // Salvar as configurações de voz
+  const saveVoiceSettings = (settings: any) => {
+    const updatedVoiceConfig = {
+      ...agentConfig.voice,
+      ...settings
+    };
+    
+    const updatedConfig = {
+      ...agentConfig,
+      voice: updatedVoiceConfig
+    };
+    
+    updateAgentConfig(updatedConfig);
+    toast.success("Configurações de voz salvas");
+    setShowSettings(false);
+  };
+
   return (
     <div className="flex flex-col space-y-4">
       <div className="flex justify-between items-center mb-2">
@@ -509,26 +567,53 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           )}
         </div>
         
-        <VoiceControls 
-          volume={volume} 
-          setVolume={setVolume}
-          playbackRate={playbackRate}
-          setPlaybackRate={setPlaybackRate}
-          selectedVoice={selectedVoice}
-          setSelectedVoice={setSelectedVoice}
-          voices={VOICES}
-        />
+        <div className="flex items-center gap-2">
+          <VoiceControls 
+            volume={volume} 
+            setVolume={setVolume}
+            playbackRate={playbackRate}
+            setPlaybackRate={setPlaybackRate}
+            selectedVoice={selectedVoice}
+            setSelectedVoice={setSelectedVoice}
+            voices={VOICES}
+          />
+          
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setShowSettings(!showSettings)}
+            className="text-xs"
+          >
+            Configurações
+          </Button>
+        </div>
       </div>
+      
+      {showSettings && (
+        <VoiceSettings 
+          settings={{
+            silenceTimeout,
+            maxCallDuration,
+            waitBeforeSpeaking,
+            waitAfterPunctuation,
+            waitWithoutPunctuation,
+            waitAfterNumber,
+            endCallMessage
+          }}
+          onSave={saveVoiceSettings}
+          onCancel={() => setShowSettings(false)}
+        />
+      )}
       
       {isRecording && (
         <div className="text-center text-sm text-muted-foreground animate-pulse">
-          Listening... (Speak naturally with pauses for response)
+          Ouvindo... (Fale naturalmente com pausas para obter resposta)
         </div>
       )}
       
       {isProcessing && (
         <div className="text-center text-sm text-muted-foreground">
-          Processing audio...
+          Processando áudio...
         </div>
       )}
       

@@ -11,6 +11,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const audioQueue = useRef<string[]>([]);
   const isProcessingQueue = useRef<boolean>(false);
   const lastPlayedTextRef = useRef<string>("");
+  const textChunksRef = useRef<string[]>([]);
   
   // Effect for applying volume and playback rate changes
   useEffect(() => {
@@ -71,7 +72,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
           await audioRef.current.play();
         } catch (error) {
           console.error("Error playing queued audio:", error);
-          // If we can't play, try the next item
+          // Se não conseguir reproduzir, tente o próximo item
           isProcessingQueue.current = false;
           processQueue();
         }
@@ -81,17 +82,39 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
+  // Function to detect similar text to avoid duplicated audio
+  const isDuplicateText = (text: string): boolean => {
+    if (!text || text.length < 5) return false;
+    
+    // Verificar se o texto é muito similar ao último texto reproduzido
+    const lastText = lastPlayedTextRef.current;
+    if (lastText.includes(text) || text.includes(lastText)) {
+      return true;
+    }
+    
+    // Verificar se o texto está contido em algum dos chunks anteriores
+    return textChunksRef.current.some(chunk => 
+      chunk.includes(text) || text.includes(chunk)
+    );
+  };
+  
   // Function to play audio
   const playAudio = (url: string, text?: string) => {
     // Check if this is a duplicate of the last played text
-    if (text && text.trim() === lastPlayedTextRef.current.trim()) {
-      console.log("Skipping duplicate text:", text);
+    if (text && isDuplicateText(text)) {
+      console.log("Skipping duplicate text:", text.substring(0, 30));
       return;
     }
     
     // If text is provided, update the last played text
     if (text) {
       lastPlayedTextRef.current = text;
+      textChunksRef.current.push(text);
+      
+      // Manter apenas os últimos 10 chunks para economizar memória
+      if (textChunksRef.current.length > 10) {
+        textChunksRef.current.shift();
+      }
     }
     
     // Add to queue
@@ -105,9 +128,23 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   
   // Function to play streaming text
   const playStreamingText = (url: string, text: string, isComplete: boolean = false) => {
-    // For streaming, we want to update the last played text only on complete messages
+    // Verificar se este texto é um duplicado
+    if (isDuplicateText(text)) {
+      console.log("Skipping duplicate streaming text:", text.substring(0, 30));
+      return;
+    }
+    
+    // Para streaming, atualizamos o último texto reproduzido apenas em mensagens completas
     if (isComplete) {
       lastPlayedTextRef.current = text;
+    }
+    
+    // Adicionar texto ao histórico
+    textChunksRef.current.push(text);
+    
+    // Manter apenas os últimos 10 chunks para economizar memória
+    if (textChunksRef.current.length > 10) {
+      textChunksRef.current.shift();
     }
     
     // Add to queue
@@ -129,6 +166,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     // Clear queue
     audioQueue.current = [];
     lastPlayedTextRef.current = "";
+    textChunksRef.current = [];
   };
   
   // Pause playback without clearing queue
@@ -153,6 +191,12 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
+  // Limpar o histórico de texto reproduzido
+  const clearTextHistory = () => {
+    lastPlayedTextRef.current = "";
+    textChunksRef.current = [];
+  };
+  
   return {
     audioRef,
     volume,
@@ -166,6 +210,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     playStreamingText,
     stopAudio,
     pauseAudio,
-    resumeAudio
+    resumeAudio,
+    clearTextHistory
   };
 }

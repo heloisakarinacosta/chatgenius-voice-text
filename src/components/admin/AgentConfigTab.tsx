@@ -18,6 +18,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface AgentConfigTabProps {
   agentConfig: AgentConfig;
@@ -95,6 +96,30 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
     
     toast.success(`Latência da voz: ${latency}ms`);
   };
+
+  // Inicializar as configurações de voz avançadas se não existirem
+  const initVoiceConfig = () => {
+    if (!updatedAgentConfig.voice.silenceTimeout) {
+      setUpdatedAgentConfig({
+        ...updatedAgentConfig,
+        voice: {
+          ...updatedAgentConfig.voice,
+          silenceTimeout: 10,
+          maxCallDuration: 1800,
+          waitBeforeSpeaking: 0.4,
+          waitAfterPunctuation: 0.1,
+          waitWithoutPunctuation: 1.5,
+          waitAfterNumber: 0.5,
+          endCallMessage: "Encerrando chamada por inatividade. Obrigado pela conversa."
+        }
+      });
+    }
+  };
+
+  // Inicializar configurações de voz se necessário
+  useEffect(() => {
+    initVoiceConfig();
+  }, []);
 
   return (
     <Card>
@@ -281,87 +306,279 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
         
         {updatedAgentConfig.voice.enabled && (
           <div className="space-y-4 border p-4 rounded-lg bg-secondary/20">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="voiceId">Voz</Label>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={updatedAgentConfig.voice.voiceId}
-                    onValueChange={(value) => setUpdatedAgentConfig({
-                      ...updatedAgentConfig,
-                      voice: {
-                        ...updatedAgentConfig.voice,
-                        voiceId: value,
-                      },
-                    })}
-                  >
-                    <SelectTrigger id="voiceId" className="flex-1">
-                      <SelectValue placeholder="Selecione a voz" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {voiceOptions.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
-                          {voice.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={testVoiceLatency}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Testar latência da voz</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+            <Tabs defaultValue="basic">
+              <TabsList className="mb-4">
+                <TabsTrigger value="basic">Básico</TabsTrigger>
+                <TabsTrigger value="advanced">Avançado</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="basic">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="voiceId">Voz</Label>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={updatedAgentConfig.voice.voiceId}
+                        onValueChange={(value) => setUpdatedAgentConfig({
+                          ...updatedAgentConfig,
+                          voice: {
+                            ...updatedAgentConfig.voice,
+                            voiceId: value,
+                          },
+                        })}
+                      >
+                        <SelectTrigger id="voiceId" className="flex-1">
+                          <SelectValue placeholder="Selecione a voz" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {voiceOptions.map((voice) => (
+                            <SelectItem key={voice.id} value={voice.id}>
+                              {voice.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={testVoiceLatency}
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Testar latência da voz</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="language">Idioma</Label>
+                    <Select
+                      value={updatedAgentConfig.voice.language}
+                      onValueChange={(value) => setUpdatedAgentConfig({
+                        ...updatedAgentConfig,
+                        voice: {
+                          ...updatedAgentConfig.voice,
+                          language: value,
+                        },
+                      })}
+                    >
+                      <SelectTrigger id="language">
+                        <SelectValue placeholder="Selecione o idioma" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {languageOptions.map((language) => (
+                          <SelectItem key={language.id} value={language.id}>
+                            {language.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="language">Idioma</Label>
-                <Select
-                  value={updatedAgentConfig.voice.language}
-                  onValueChange={(value) => setUpdatedAgentConfig({
-                    ...updatedAgentConfig,
-                    voice: {
-                      ...updatedAgentConfig.voice,
-                      language: value,
-                    },
-                  })}
-                >
-                  <SelectTrigger id="language">
-                    <SelectValue placeholder="Selecione o idioma" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {languageOptions.map((language) => (
-                      <SelectItem key={language.id} value={language.id}>
-                        {language.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Latência da Voz</Label>
-                <div className="flex items-center gap-2">
-                  <Volume2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono">{updatedAgentConfig.voice.latency || 0}ms</span>
+                
+                <div className="space-y-2 mt-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Latência da Voz</Label>
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-mono">{updatedAgentConfig.voice.latency || 0}ms</span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Tempo de resposta medido para geração de voz.
+                  </p>
                 </div>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Tempo de resposta medido para geração de voz.
-              </p>
-            </div>
+              </TabsContent>
+              
+              <TabsContent value="advanced">
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Configurações de Pausas e Fala</h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="waitBeforeSpeaking">Espera antes de falar (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="waitBeforeSpeaking"
+                            min="0"
+                            max="2"
+                            step="0.1"
+                            value={updatedAgentConfig.voice.waitBeforeSpeaking || 0.4}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                waitBeforeSpeaking: parseFloat(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo que o assistente espera antes de começar a falar
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="waitAfterPunctuation">Após pontuação (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="waitAfterPunctuation"
+                            min="0"
+                            max="3"
+                            step="0.1"
+                            value={updatedAgentConfig.voice.waitAfterPunctuation || 0.1}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                waitAfterPunctuation: parseFloat(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo mínimo após transcrição com pontuação
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="waitWithoutPunctuation">Sem pontuação (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="waitWithoutPunctuation"
+                            min="0"
+                            max="3"
+                            step="0.1"
+                            value={updatedAgentConfig.voice.waitWithoutPunctuation || 1.5}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                waitWithoutPunctuation: parseFloat(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo mínimo após transcrição sem pontuação
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="waitAfterNumber">Após números (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="waitAfterNumber"
+                            min="0"
+                            max="3"
+                            step="0.1"
+                            value={updatedAgentConfig.voice.waitAfterNumber || 0.5}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                waitAfterNumber: parseFloat(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo mínimo após transcrição com números
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3 mt-4">
+                    <h4 className="text-sm font-medium">Configurações de Tempo Limite</h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="silenceTimeout">Limite de silêncio (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="silenceTimeout"
+                            min="1"
+                            max="60"
+                            value={updatedAgentConfig.voice.silenceTimeout || 10}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                silenceTimeout: parseInt(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo de espera antes de encerrar chamada por inatividade
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="maxCallDuration">Duração máxima (seg)</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            id="maxCallDuration"
+                            min="60"
+                            max="3600"
+                            value={updatedAgentConfig.voice.maxCallDuration || 1800}
+                            onChange={(e) => setUpdatedAgentConfig({
+                              ...updatedAgentConfig,
+                              voice: {
+                                ...updatedAgentConfig.voice,
+                                maxCallDuration: parseInt(e.target.value),
+                              },
+                            })}
+                          />
+                          <span className="text-sm text-muted-foreground">seg</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tempo máximo que uma chamada pode durar
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 mt-4">
+                    <Label htmlFor="endCallMessage">Mensagem de encerramento</Label>
+                    <Textarea
+                      id="endCallMessage"
+                      value={updatedAgentConfig.voice.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa."}
+                      onChange={(e) => setUpdatedAgentConfig({
+                        ...updatedAgentConfig,
+                        voice: {
+                          ...updatedAgentConfig.voice,
+                          endCallMessage: e.target.value,
+                        },
+                      })}
+                      rows={2}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Mensagem falada ao encerrar a chamada por inatividade
+                    </p>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             <div className="mt-2 p-3 bg-primary/5 rounded border border-primary/10">
               <p className="text-sm">

@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as database from "@/services/databaseService";
@@ -43,7 +44,14 @@ export const ChatContext = createContext<ChatContextType>({
       enabled: true,
       voiceId: "alloy",
       language: "en-US",
-      latency: 100
+      latency: 100,
+      silenceTimeout: 10,
+      maxCallDuration: 1800,
+      waitBeforeSpeaking: 0.4,
+      waitAfterPunctuation: 0.1,
+      waitWithoutPunctuation: 1.5,
+      waitAfterNumber: 0.5,
+      endCallMessage: "Encerrando chamada por inatividade. Obrigado pela conversa."
     },
     trainingFiles: [],
     model: "gpt-4o",
@@ -98,7 +106,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       enabled: true,
       voiceId: "alloy",
       language: "en-US",
-      latency: 100
+      latency: 100,
+      silenceTimeout: 10,
+      maxCallDuration: 1800,
+      waitBeforeSpeaking: 0.4,
+      waitAfterPunctuation: 0.1,
+      waitWithoutPunctuation: 1.5,
+      waitAfterNumber: 0.5,
+      endCallMessage: "Encerrando chamada por inatividade. Obrigado pela conversa."
     },
     trainingFiles: [],
     model: "gpt-4o", 
@@ -152,6 +167,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const mergedAgentConfig = {
           ...agentConfig, // Default values
           ...agentCfg,    // Values from database
+          voice: {
+            ...agentConfig.voice, // Default voice values
+            ...agentCfg.voice     // Voice values from database
+          }
         };
         setAgentConfig(mergedAgentConfig);
       }
