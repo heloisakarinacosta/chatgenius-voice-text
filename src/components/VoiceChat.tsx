@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { Mic, MicOff, MessageSquare, Volume2, PauseCircle, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,13 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const voiceDetectedRef = useRef<boolean>(false);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Configurações de detecção de voz
+  const SILENCE_THRESHOLD = 5; // Nível abaixo do qual é considerado silêncio
+  const MIN_VOICE_LEVEL = 15; // Nível mínimo para considerar como voz
+  const SILENCE_DURATION = 1000; // Tempo em ms para considerar como silêncio contínuo
 
   useEffect(() => {
     if (isVoiceChatActive && !isRecording && !isTranscribing && !isTextInputMode) {
@@ -37,6 +45,9 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
+      }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
       }
     };
   }, [isVoiceChatActive]);
@@ -85,10 +96,11 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       streamRef.current = stream;
       
       console.log("Acesso ao microfone concedido, criando MediaRecorder");
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      voiceDetectedRef.current = false;
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -111,13 +123,29 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           return;
         }
         
+        // Verificar se voz foi detectada durante a gravação
+        if (!voiceDetectedRef.current) {
+          console.log("Nenhuma voz detectada na gravação, ignorando");
+          toast.info("Não detectamos sua voz. Por favor, tente novamente falando mais alto.");
+          setRecordingTime(0);
+          audioChunksRef.current = [];
+          
+          // Reiniciar a gravação após breve pausa
+          setTimeout(() => {
+            if (isVoiceChatActive && !isRecording && !isTranscribing) {
+              startRecording();
+            }
+          }, 1000);
+          return;
+        }
+        
         try {
           setIsTranscribing(true);
           console.log("Transcrevendo áudio...");
           const transcript = await transcribeAudio(audioBlob, apiKey);
           setIsTranscribing(false);
           
-          if (transcript) {
+          if (transcript && transcript.trim() !== "") {
             console.log(`Transcrição: "${transcript}"`);
             const messageId = addMessage(transcript, "user");
             console.log(`Mensagem adicionada com ID: ${messageId}`);
@@ -135,7 +163,14 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
             setLastUserInteraction(new Date());
           } else {
             console.error("Transcrição vazia recebida");
-            toast.error("Não foi possível transcrever sua mensagem. Por favor, tente novamente.");
+            toast.info("Não conseguimos entender o que você disse. Por favor, tente novamente.");
+            
+            // Reiniciar gravação se não conseguimos entender
+            setTimeout(() => {
+              if (isVoiceChatActive && !isRecording && !isTranscribing) {
+                startRecording();
+              }
+            }, 1000);
           }
         } catch (error) {
           setIsTranscribing(false);
@@ -157,6 +192,13 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
           toast.error(errorMessage, {
             description: errorDescription,
           });
+          
+          // Reiniciar gravação após erro
+          setTimeout(() => {
+            if (isVoiceChatActive && !isRecording && !isTranscribing) {
+              startRecording();
+            }
+          }, 2000);
         }
         
         setRecordingTime(0);
@@ -177,6 +219,27 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         analyser.getByteFrequencyData(dataArray);
         const average = dataArray.reduce((acc, val) => acc + val, 0) / bufferLength;
         setAudioLevel(average);
+        
+        // Detecção de voz
+        if (average > MIN_VOICE_LEVEL) {
+          voiceDetectedRef.current = true;
+          
+          // Reset do timeout de silêncio quando detectamos voz
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
+        } else if (average < SILENCE_THRESHOLD && isRecording && recordingTime > 2) {
+          // Se estiver em silêncio e já estiver gravando por alguns segundos
+          if (!silenceTimeoutRef.current) {
+            silenceTimeoutRef.current = setTimeout(() => {
+              if (isRecording && voiceDetectedRef.current) {
+                console.log("Silêncio prolongado detectado, parando gravação");
+                stopRecording();
+              }
+            }, SILENCE_DURATION);
+          }
+        }
         
         if (isRecording) {
           setTimeout(updateAudioLevel, 100);
@@ -260,6 +323,10 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       }
     } else {
       setIsVoiceChatActive(true);
+      // Iniciar a gravação imediatamente ao ativar o chat de voz
+      setTimeout(() => {
+        startRecording();
+      }, 300);
     }
   };
 
