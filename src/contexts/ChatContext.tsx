@@ -11,7 +11,8 @@ import {
   AdminConfig,
   ChatContextType,
   AgentFunction,
-  TrainingFile
+  TrainingFile,
+  VoiceConfig
 } from "@/types/chat";
 
 // Re-export the types
@@ -22,7 +23,8 @@ export type {
   AgentConfig,
   AdminConfig,
   AgentFunction,
-  TrainingFile
+  TrainingFile,
+  VoiceConfig
 };
 
 // Create the chat context with correct types

@@ -28,6 +28,13 @@ export interface VoiceConfig {
   voiceId: string;
   language: string;
   latency: number;
+  silenceTimeout?: number;
+  maxCallDuration?: number;
+  waitBeforeSpeaking?: number;
+  waitAfterPunctuation?: number;
+  waitWithoutPunctuation?: number;
+  waitAfterNumber?: number;
+  endCallMessage?: string;
 }
 
 export interface AgentFunction {
