@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { Mic, MicOff, MessageSquare, Volume2, PauseCircle, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,22 +29,18 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
   const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (isListening && !isRecording && !isTranscribing && !isTextInputMode) {
-      const timeSinceLastInteraction = new Date().getTime() - lastUserInteraction.getTime();
-      
-      if (timeSinceLastInteraction > 3000) {
-        startRecording();
-      }
+    if (isVoiceChatActive && !isRecording && !isTranscribing && !isTextInputMode) {
+      console.log("Auto-starting recording when voice chat is activated");
+      startRecording();
     }
-    
+
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
     };
-  }, [isListening, isRecording, isTranscribing, isTextInputMode, lastUserInteraction]);
+  }, [isVoiceChatActive]);
 
-  // Draw audio visualization on canvas
   const drawAudioVisualization = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -53,20 +48,16 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Set styles
     ctx.fillStyle = 'rgba(0, 120, 255, 0.2)';
     ctx.strokeStyle = 'rgb(0, 120, 255)';
     ctx.lineWidth = 2;
     
-    // Draw waveform based on audio level
     ctx.beginPath();
     const centerY = canvas.height / 2;
     const amplitude = (audioLevel / 100) * (canvas.height / 2 - 5);
     
-    // Create a sine wave effect based on audio level
     for (let x = 0; x < canvas.width; x += 1) {
       const y = centerY + Math.sin(x * 0.1 + Date.now() * 0.005) * amplitude;
       if (x === 0) {
@@ -78,7 +69,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     
     ctx.stroke();
     
-    // Continue animation
     animationFrameRef.current = requestAnimationFrame(drawAudioVisualization);
   };
 
@@ -132,7 +122,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
             const messageId = addMessage(transcript, "user");
             console.log(`Mensagem adicionada com ID: ${messageId}`);
             
-            // Enviar a mensagem para o servidor
             try {
               const success = await sendMessage(transcript);
               if (!success) {
@@ -174,7 +163,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         audioChunksRef.current = [];
       };
       
-      // Set up audio analyzer for visualization
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
@@ -183,7 +171,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
       
-      // Start visualization
       const updateAudioLevel = () => {
         if (!isRecording) return;
         
@@ -198,7 +185,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
       
       updateAudioLevel();
       
-      // Start visualization
       if (canvasRef.current) {
         drawAudioVisualization();
       }
@@ -259,7 +245,6 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
         timerRef.current = null;
       }
       
-      // Stop visualization
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -302,11 +287,9 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
     if (!textInput.trim()) return;
     
     try {
-      // Adicionar mensagem localmente
       const messageId = addMessage(textInput, "user");
       console.log(`Mensagem de texto adicionada com ID: ${messageId}`);
       
-      // Enviar mensagem para o servidor
       const success = await sendMessage(textInput);
       if (!success) {
         console.error("Falha ao enviar mensagem de texto para o servidor");
@@ -424,6 +407,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
               className={`rounded-full w-16 h-16 ${isRecording ? 'animate-pulse' : ''}`}
               onClick={isRecording ? stopRecording : startRecording}
               disabled={isTranscribing}
+              aria-label={isRecording ? "Stop recording" : "Start recording"}
             >
               {isRecording ? (
                 <MicOff className="h-6 w-6" />
@@ -437,6 +421,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
               size="icon"
               className="rounded-full w-12 h-12"
               onClick={toggleListening}
+              aria-label={isListening ? "Pause listening" : "Resume listening"}
             >
               {isListening ? (
                 <PauseCircle className="h-5 w-5 text-amber-500" />
@@ -462,7 +447,7 @@ const VoiceChat: React.FC<VoiceChatProps> = ({ apiKey }) => {
               : isTranscribing
               ? "Transcrevendo sua mensagem..."
               : isListening
-              ? "Escutando... Comece a falar e a gravação iniciará automaticamente."
+              ? "Escutando... Comece a falar e a gravação continuará automaticamente."
               : "Clique no botão para começar a falar."}
           </p>
         </div>
