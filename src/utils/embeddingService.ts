@@ -30,6 +30,7 @@ export class EmbeddingService {
   private embeddingsCache: Map<string, number[]> = new Map();
   private ready = false;
   private minRelevanceScore = 0.5; // Limite mínimo de relevância para considerar um trecho relevante
+  private processingPromises: Map<string, Promise<any>> = new Map(); // Para rastrear promessas ativas
 
   constructor() {
     console.log("Embedding service initialized");
@@ -173,9 +174,16 @@ export class EmbeddingService {
     console.log(`Removing document ${fileId} from index`);
     this.documents.delete(fileId);
     this.ready = this.documents.size > 0;
+    
+    // Limpar quaisquer promessas pendentes associadas a este documento
+    const promiseKey = `doc_${fileId}`;
+    if (this.processingPromises.has(promiseKey)) {
+      console.log(`Cleaning up pending promise for document ${fileId}`);
+      this.processingPromises.delete(promiseKey);
+    }
   }
 
-  // Busca por documentos relevantes para uma query
+  // Busca por documentos relevantes para uma query com timeout
   public search(query: string, topK: number = 3): SearchResult[] {
     if (!this.ready || this.documents.size === 0) {
       console.log("No documents in index or service not ready");
@@ -184,35 +192,58 @@ export class EmbeddingService {
     
     console.log(`Searching for relevant chunks for query: "${query.substring(0, 30)}..."`);
     
-    const queryEmbedding = this.createEmbedding(query);
-    const results: Array<{content: string; fileName: string; score: number}> = [];
-    
-    // Buscar em todos os chunks de todos os documentos
-    this.documents.forEach(doc => {
-      doc.chunks.forEach(chunk => {
-        if (chunk.embedding) {
-          const score = this.cosineSimilarity(queryEmbedding, chunk.embedding);
-          
-          // Só adiciona resultados acima do limite mínimo de relevância
-          if (score > this.minRelevanceScore) {
-            results.push({
-              content: chunk.content,
-              fileName: chunk.fileName,
-              score
-            });
+    try {
+      const queryEmbedding = this.createEmbedding(query);
+      const results: Array<{content: string; fileName: string; score: number}> = [];
+      
+      // Buscar em todos os chunks de todos os documentos
+      this.documents.forEach(doc => {
+        doc.chunks.forEach(chunk => {
+          if (chunk.embedding) {
+            const score = this.cosineSimilarity(queryEmbedding, chunk.embedding);
+            
+            // Só adiciona resultados acima do limite mínimo de relevância
+            if (score > this.minRelevanceScore) {
+              results.push({
+                content: chunk.content,
+                fileName: chunk.fileName,
+                score
+              });
+            }
           }
-        }
+        });
       });
+      
+      // Ordenar por similaridade
+      results.sort((a, b) => b.score - a.score);
+      
+      // Retornar os top-K resultados
+      const topResults = results.slice(0, topK);
+      
+      console.log(`Found ${topResults.length} relevant chunks (from ${results.length} total above threshold)`);
+      return topResults;
+    } catch (error) {
+      console.error("Error in search:", error);
+      return [];
+    }
+  }
+
+  // Busca assíncrona com promise e timeout
+  public async searchAsync(query: string, topK: number = 3, timeoutMs: number = 3000): Promise<SearchResult[]> {
+    const searchPromise = new Promise<SearchResult[]>((resolve) => {
+      resolve(this.search(query, topK));
     });
     
-    // Ordenar por similaridade
-    results.sort((a, b) => b.score - a.score);
+    const timeoutPromise = new Promise<SearchResult[]>((_, reject) => {
+      setTimeout(() => reject(new Error('Search timeout')), timeoutMs);
+    });
     
-    // Retornar os top-K resultados
-    const topResults = results.slice(0, topK);
-    
-    console.log(`Found ${topResults.length} relevant chunks (from ${results.length} total above threshold)`);
-    return topResults;
+    try {
+      return await Promise.race([searchPromise, timeoutPromise]);
+    } catch (error) {
+      console.error("Search timed out or failed:", error);
+      return [];
+    }
   }
 
   // Verifica se o serviço está pronto
@@ -235,37 +266,73 @@ export class EmbeddingService {
   }
   
   // Método para obter contexto relevante para uma query
-  public getRelevantContext(query: string, maxChars: number = 4000): string {
-    const results = this.search(query, 5); // Busca os 5 resultados mais relevantes
-    
-    if (results.length === 0) {
-      console.log("No relevant context found for query");
+  public async getRelevantContext(query: string, maxChars: number = 4000): Promise<string> {
+    try {
+      // Gerar um ID para esta operação de busca específica
+      const operationId = `query_${this.generateHash(query)}_${Date.now()}`;
+      
+      // Criar a promessa com timeout
+      const contextPromise = new Promise<string>(async (resolve) => {
+        const results = await this.searchAsync(query, 5);
+        
+        if (results.length === 0) {
+          console.log("No relevant context found for query");
+          resolve("");
+          return;
+        }
+        
+        let context = "Informações relevantes sobre a consulta:\n\n";
+        let totalChars = context.length;
+        
+        // Adiciona cada resultado ao contexto, mantendo abaixo do limite de caracteres
+        for (const result of results) {
+          const entry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content}\n\n`;
+          
+          if (totalChars + entry.length <= maxChars) {
+            context += entry;
+            totalChars += entry.length;
+          } else {
+            // Se o próximo trecho ultrapassa o limite, adiciona uma versão truncada
+            const remainingChars = maxChars - totalChars - 100;
+            if (remainingChars > 200) {
+              const truncatedEntry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content.substring(0, remainingChars)}...\n\n`;
+              context += truncatedEntry;
+            }
+            break;
+          }
+        }
+        
+        console.log(`Generated context with ${totalChars} characters from ${results.length} relevant chunks`);
+        resolve(context);
+      });
+      
+      // Registrar a promessa para limpeza posterior se necessário
+      this.processingPromises.set(operationId, contextPromise);
+      
+      // Definir um timeout
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Context generation timeout'));
+          // Limpar após o timeout
+          if (this.processingPromises.has(operationId)) {
+            this.processingPromises.delete(operationId);
+          }
+        }, 5000); // 5 segundos de timeout
+      });
+      
+      // Executar com timeout
+      const result = await Promise.race([contextPromise, timeoutPromise]);
+      
+      // Limpar após conclusão
+      if (this.processingPromises.has(operationId)) {
+        this.processingPromises.delete(operationId);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("Error getting relevant context:", error);
       return "";
     }
-    
-    let context = "Informações relevantes sobre a consulta:\n\n";
-    let totalChars = context.length;
-    
-    // Adiciona cada resultado ao contexto, mantendo abaixo do limite de caracteres
-    for (const result of results) {
-      const entry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content}\n\n`;
-      
-      if (totalChars + entry.length <= maxChars) {
-        context += entry;
-        totalChars += entry.length;
-      } else {
-        // Se o próximo trecho ultrapassa o limite, adiciona uma versão truncada
-        const remainingChars = maxChars - totalChars - 100;
-        if (remainingChars > 200) {
-          const truncatedEntry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content.substring(0, remainingChars)}...\n\n`;
-          context += truncatedEntry;
-        }
-        break;
-      }
-    }
-    
-    console.log(`Generated context with ${totalChars} characters from ${results.length} relevant chunks`);
-    return context;
   }
 }
 
