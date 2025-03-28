@@ -93,7 +93,7 @@ const RagSettings = () => {
           >
             {isReindexing ? (
               <>
-                <span className="animate-spin mr-2">⟳</span>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 Reindexando...
               </>
             ) : (
