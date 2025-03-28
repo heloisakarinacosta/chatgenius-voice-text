@@ -29,6 +29,7 @@ export class EmbeddingService {
   private documents: Map<string, IndexedDocument> = new Map();
   private embeddingsCache: Map<string, number[]> = new Map();
   private ready = false;
+  private minRelevanceScore = 0.5; // Limite mínimo de relevância para considerar um trecho relevante
 
   constructor() {
     console.log("Embedding service initialized");
@@ -180,6 +181,8 @@ export class EmbeddingService {
       return [];
     }
     
+    console.log(`Searching for relevant chunks for query: "${query.substring(0, 30)}..."`);
+    
     const queryEmbedding = this.createEmbedding(query);
     const results: Array<{content: string; fileName: string; score: number}> = [];
     
@@ -188,11 +191,15 @@ export class EmbeddingService {
       doc.chunks.forEach(chunk => {
         if (chunk.embedding) {
           const score = this.cosineSimilarity(queryEmbedding, chunk.embedding);
-          results.push({
-            content: chunk.content,
-            fileName: chunk.fileName,
-            score
-          });
+          
+          // Só adiciona resultados acima do limite mínimo de relevância
+          if (score > this.minRelevanceScore) {
+            results.push({
+              content: chunk.content,
+              fileName: chunk.fileName,
+              score
+            });
+          }
         }
       });
     });
@@ -201,7 +208,10 @@ export class EmbeddingService {
     results.sort((a, b) => b.score - a.score);
     
     // Retornar os top-K resultados
-    return results.slice(0, topK);
+    const topResults = results.slice(0, topK);
+    
+    console.log(`Found ${topResults.length} relevant chunks (from ${results.length} total above threshold)`);
+    return topResults;
   }
 
   // Verifica se o serviço está pronto
@@ -221,6 +231,40 @@ export class EmbeddingService {
       documentCount: this.documents.size,
       chunkCount
     };
+  }
+  
+  // Método para obter contexto relevante para uma query
+  public getRelevantContext(query: string, maxChars: number = 4000): string {
+    const results = this.search(query, 5); // Busca os 5 resultados mais relevantes
+    
+    if (results.length === 0) {
+      console.log("No relevant context found for query");
+      return "";
+    }
+    
+    let context = "Informações relevantes sobre a consulta:\n\n";
+    let totalChars = context.length;
+    
+    // Adiciona cada resultado ao contexto, mantendo abaixo do limite de caracteres
+    for (const result of results) {
+      const entry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content}\n\n`;
+      
+      if (totalChars + entry.length <= maxChars) {
+        context += entry;
+        totalChars += entry.length;
+      } else {
+        // Se o próximo trecho ultrapassa o limite, adiciona uma versão truncada
+        const remainingChars = maxChars - totalChars - 100;
+        if (remainingChars > 200) {
+          const truncatedEntry = `### Trecho de ${result.fileName} (relevância: ${result.score.toFixed(2)}):\n${result.content.substring(0, remainingChars)}...\n\n`;
+          context += truncatedEntry;
+        }
+        break;
+      }
+    }
+    
+    console.log(`Generated context with ${totalChars} characters from ${results.length} relevant chunks`);
+    return context;
   }
 }
 

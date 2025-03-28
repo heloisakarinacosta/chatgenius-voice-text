@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { AgentFunction } from "@/contexts/ChatContext";
+import { embeddingService } from "@/utils/embeddingService";
 
 export interface FunctionFormState {
   name: string;
@@ -32,6 +33,9 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   cancelEditing,
 }) => {
   const [parametersError, setParametersError] = useState<string | null>(null);
+  const [testQuery, setTestQuery] = useState("");
+  const [testResults, setTestResults] = useState<string | null>(null);
+  const [showTestPanel, setShowTestPanel] = useState(false);
   
   // Function to handle parameter changes
   const handleParameterChange = (value: string) => {
@@ -74,6 +78,35 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       addOrUpdateFunction();
     } catch (e) {
       toast.error("Invalid parameters JSON: " + e.message);
+    }
+  };
+  
+  const testEmbeddingSearch = () => {
+    if (!testQuery.trim()) {
+      toast.error("Por favor, insira uma consulta para testar");
+      return;
+    }
+    
+    if (!embeddingService.isReady()) {
+      toast.error("O serviço de embedding não está pronto. Adicione arquivos de treinamento primeiro.");
+      return;
+    }
+    
+    try {
+      // Busca contexto relevante
+      const context = embeddingService.getRelevantContext(testQuery);
+      
+      if (!context) {
+        setTestResults("Nenhum contexto relevante encontrado para a consulta.");
+        return;
+      }
+      
+      setTestResults(context);
+      toast.success("Busca de contexto realizada com sucesso");
+    } catch (error) {
+      console.error("Erro ao testar busca:", error);
+      toast.error("Ocorreu um erro ao testar a busca de contexto");
+      setTestResults("Erro ao realizar busca: " + error.message);
     }
   };
 
@@ -158,6 +191,81 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
           The parameters should be a valid JSON Schema object. This defines what parameters the function accepts.
         </p>
       </div>
+      
+      {/* Painel de teste de RAG */}
+      <div className="border-t pt-4 mt-4">
+        <Button 
+          variant="outline" 
+          type="button" 
+          onClick={() => setShowTestPanel(!showTestPanel)}
+          className="mb-4"
+        >
+          {showTestPanel ? "Ocultar Teste RAG" : "Testar Sistema RAG"}
+        </Button>
+        
+        {showTestPanel && (
+          <div className="space-y-4 p-4 border rounded-md bg-muted/30">
+            <h4 className="font-medium">Teste de Busca de Contexto Relevante</h4>
+            <p className="text-sm text-muted-foreground">
+              Use este painel para testar a busca de contexto relevante nos arquivos de treinamento.
+            </p>
+            
+            <div className="flex gap-2">
+              <Input
+                value={testQuery}
+                onChange={(e) => setTestQuery(e.target.value)}
+                placeholder="Digite uma consulta para testar..."
+                className="flex-1"
+              />
+              <Button 
+                onClick={testEmbeddingSearch}
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                <Search className="h-4 w-4" />
+                Testar
+              </Button>
+            </div>
+            
+            {testResults && (
+              <div className="mt-2">
+                <h5 className="text-sm font-medium mb-2">Resultados:</h5>
+                <div className="bg-background border rounded-md p-2 max-h-60 overflow-y-auto">
+                  <pre className="text-xs whitespace-pre-wrap">{testResults}</pre>
+                </div>
+                <div className="flex justify-end mt-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setTestResults(null)}
+                  >
+                    Limpar
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            <div className="pt-2">
+              <p className="text-xs text-muted-foreground">
+                Estatísticas:
+                {embeddingService.isReady() ? (
+                  <>
+                    <span className="ml-1">
+                      {embeddingService.getStats().documentCount} documentos,
+                    </span>
+                    <span className="ml-1">
+                      {embeddingService.getStats().chunkCount} chunks indexados
+                    </span>
+                  </>
+                ) : (
+                  <span className="ml-1">Serviço não inicializado</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+      
       <div className="flex items-center gap-2">
         <Button onClick={handleSubmit}>
           {editingFunctionIndex !== null ? "Update Function" : "Add Function"}
