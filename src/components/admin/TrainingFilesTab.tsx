@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { TrainingFile } from "@/types/chat";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
+import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2, Database } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { v4 as uuidv4 } from "uuid";
+import { embeddingService } from "@/utils/embeddingService";
 
 interface TrainingFilesTabProps {
   trainingFiles: TrainingFile[];
@@ -27,6 +28,10 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [indexingStatus, setIndexingStatus] = useState<{
+    documentCount: number;
+    chunkCount: number;
+  } | null>(null);
 
   // Clear success message after 5 seconds
   useEffect(() => {
@@ -37,6 +42,27 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       return () => clearTimeout(timer);
     }
   }, [uploadSuccess]);
+
+  // Index all training files when component mounts or training files change
+  useEffect(() => {
+    const indexAllFiles = async () => {
+      console.log(`Indexing ${trainingFiles.length} training files...`);
+      
+      for (const file of trainingFiles) {
+        embeddingService.addDocument(file.id, file.name, file.content);
+      }
+      
+      updateIndexingStatus();
+    };
+    
+    indexAllFiles();
+  }, [trainingFiles]);
+
+  const updateIndexingStatus = () => {
+    if (embeddingService.isReady()) {
+      setIndexingStatus(embeddingService.getStats());
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -98,6 +124,10 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       const success = await addTrainingFile(trainingFile);
       
       if (success) {
+        // Adicione o arquivo ao índice de embeddings
+        embeddingService.addDocument(trainingFile.id, trainingFile.name, trainingFile.content);
+        updateIndexingStatus();
+        
         setUploadSuccess(`Arquivo "${file.name}" adicionado com sucesso`);
         toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
       } else {
@@ -144,6 +174,10 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       console.log("Attempting to remove file:", id, name);
       const success = await removeTrainingFile(id);
       if (success) {
+        // Remova o arquivo do índice de embeddings
+        embeddingService.removeDocument(id);
+        updateIndexingStatus();
+        
         toast.success(`Arquivo "${name}" removido com sucesso`);
       } else {
         toast.error(`Erro ao remover arquivo "${name}"`);
@@ -225,6 +259,16 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
           )}
         </div>
 
+        {indexingStatus && (
+          <div className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 p-3 rounded-md mt-2 text-sm flex items-start gap-2">
+            <Database className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p><strong>Índice de conhecimento:</strong> {indexingStatus.documentCount} documentos processados em {indexingStatus.chunkCount} fragmentos</p>
+              <p className="text-xs mt-1">Usando RAG para recuperação de informação eficiente</p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -232,7 +276,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
               {trainingFiles.length > 0 && (
                 <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full text-xs">
                   <CheckCircle2 className="h-3 w-3" />
-                  <span>Ativos e Usados em Cada Pergunta</span>
+                  <span>Processados para RAG</span>
                 </div>
               )}
             </div>
@@ -303,8 +347,8 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
             <div className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-950/50 text-green-900 dark:text-green-300 rounded-md">
               <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
               <div className="text-sm">
-                <p><strong>{trainingFiles.length} arquivos</strong> estão ativos e sendo enviados com cada mensagem do usuário para o assistente.</p>
-                <p className="mt-1">O conteúdo destes arquivos está sendo utilizado como conhecimento personalizado para melhorar as respostas.</p>
+                <p><strong>{trainingFiles.length} arquivos</strong> indexados com tecnologia RAG.</p>
+                <p className="mt-1">Somente os trechos mais relevantes para cada pergunta são enviados à API, economizando tokens.</p>
               </div>
             </div>
           )}
@@ -322,8 +366,8 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         <div className="space-y-1 w-full">
           <h4 className="text-sm font-medium">Como os arquivos são utilizados?</h4>
           <p className="text-sm text-muted-foreground">
-            Os conteúdos dos arquivos são enviados à OpenAI como contexto adicional em cada pergunta, 
-            permitindo que o assistente responda com base nesses dados específicos.
+            O sistema RAG (Retrieval Augmented Generation) identifica e envia apenas os trechos mais relevantes
+            para cada pergunta, reduzindo o consumo de tokens e melhorando a precisão das respostas.
           </p>
         </div>
       </CardFooter>
