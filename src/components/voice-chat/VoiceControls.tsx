@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Settings, VolumeX, Volume1, Volume2, Clock } from "lucide-react";
+import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,6 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
+import { embeddingService } from "@/utils/embeddingService";
 
 interface Voice {
   id: string;
@@ -31,6 +33,15 @@ interface VoiceControlsProps {
   voices: Voice[];
 }
 
+const brazilianVoiceLabels: Record<string, string> = {
+  "alloy": "Alloy (Neutro)",
+  "echo": "Echo (Masculina)",
+  "fable": "Fable (Masculina, Suave)",
+  "onyx": "Onyx (Masculina, Grave)",
+  "nova": "Nova (Feminina, Energética)",
+  "shimmer": "Shimmer (Feminina, Clara)"
+};
+
 export const VoiceControls: React.FC<VoiceControlsProps> = ({
   volume,
   setVolume,
@@ -41,12 +52,27 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
   voices
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const VolumeIcon = volume === 0 
     ? VolumeX 
     : volume < 0.5 
       ? Volume1 
       : Volume2;
+      
+  const handleReindexDocuments = () => {
+    try {
+      embeddingService.reindexAllDocuments();
+      toast.success("Base de conhecimento reindexada com sucesso", {
+        description: "Melhorias de busca aplicadas a todos os documentos."
+      });
+    } catch (error) {
+      console.error("Erro ao reindexar documentos:", error);
+      toast.error("Erro ao reindexar documentos", {
+        description: "Tente novamente ou contate o suporte."
+      });
+    }
+  };
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -116,11 +142,54 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
               <SelectContent>
                 {voices.map((voice) => (
                   <SelectItem key={voice.id} value={voice.id}>
-                    {voice.name}
+                    {brazilianVoiceLabels[voice.id] || voice.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          
+          <div className="pt-2 border-t">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-xs flex items-center gap-1.5"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              {showAdvanced ? "Ocultar opções avançadas" : "Mostrar opções avançadas"}
+            </Button>
+            
+            {showAdvanced && (
+              <div className="space-y-2 mt-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Database className="h-3.5 w-3.5" />
+                    Base de conhecimento
+                  </p>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 flex items-center gap-1 text-xs"
+                    onClick={handleReindexDocuments}
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Reindexar
+                  </Button>
+                </div>
+                
+                <p className="text-xs text-muted-foreground mt-1">
+                  A reindexação melhora a precisão do sistema de busca com o algoritmo mais recente.
+                </p>
+                
+                {embeddingService.isReady() && (
+                  <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
+                    <p>Status: {embeddingService.getStats().documentCount} documentos indexados</p>
+                    <p>Chunks: {embeddingService.getStats().chunkCount} fragmentos</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </PopoverContent>

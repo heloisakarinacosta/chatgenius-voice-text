@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -6,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Search, RefreshCw } from "lucide-react";
+import { AlertTriangle, Search, RefreshCw, FileText } from "lucide-react";
 import { AgentFunction } from "@/contexts/ChatContext";
 import { embeddingService } from "@/utils/embeddingService";
 
@@ -38,6 +37,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [rawResults, setRawResults] = useState<Array<{fileName: string; score: number; content: string}> | null>(null);
   
   // Function to handle parameter changes
   const handleParameterChange = (value: string) => {
@@ -97,20 +97,37 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
     try {
       setIsSearching(true);
       setDebugInfo(null);
+      setRawResults(null);
+      
+      // Ativar modo debug
+      embeddingService.setDebug(true);
       
       // Buscar resultados brutos para mostrar detalhes
-      const rawResults = embeddingService.search(testQuery, 5);
+      const results = embeddingService.search(testQuery, 5);
+      setRawResults(results);
       
       // Construir informações de debug
       let debug = "Detalhes da busca:\n";
-      if (rawResults.length > 0) {
-        debug += rawResults.map((r, i) => 
-          `${i+1}. Arquivo: ${r.fileName}\n   Score: ${r.score.toFixed(4)}\n   Primeiros 50 chars: ${r.content.substring(0, 50)}...\n`
+      if (results.length > 0) {
+        debug += results.map((r, i) => 
+          `${i+1}. Arquivo: ${r.fileName}\n   Score: ${r.score.toFixed(4)}\n   Primeiros 100 chars: ${r.content.substring(0, 100)}...\n`
         ).join("\n");
       } else {
         debug += "Nenhum resultado encontrado acima do limiar de relevância.\n";
         debug += "Isso pode indicar que o texto que você está procurando não está nos documentos,\n";
         debug += "ou que o algoritmo de relevância não encontrou correspondência suficiente.\n";
+        
+        // Sugerir termos semelhantes
+        const specialTerms = ["cpj", "cpj-3c", "spiced", "office.adv"];
+        const queryLower = testQuery.toLowerCase();
+        
+        for (const term of specialTerms) {
+          if (queryLower.includes(term)) {
+            debug += `\nDica: Foi detectado o termo especial "${term}" na consulta.\n`;
+            debug += `Tente uma consulta mais específica que inclua mais contexto.\n`;
+            break;
+          }
+        }
       }
       
       // Definir detalhes da busca
@@ -132,6 +149,8 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       setTestResults("Erro ao realizar busca: " + (error as Error).message);
     } finally {
       setIsSearching(false);
+      // Desativar modo debug
+      embeddingService.setDebug(false);
     }
   };
 
@@ -144,6 +163,12 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       console.error("Erro ao reindexar documentos:", error);
       toast.error("Erro ao reindexar documentos");
     }
+  };
+  
+  const clearTestResults = () => {
+    setTestResults(null);
+    setDebugInfo(null);
+    setRawResults(null);
   };
 
   return (
@@ -275,6 +300,30 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
               </Button>
             </div>
             
+            {rawResults && rawResults.length > 0 && (
+              <div className="mt-2">
+                <h5 className="text-sm font-medium mb-2">Resultados encontrados:</h5>
+                <div className="grid gap-2">
+                  {rawResults.map((result, index) => (
+                    <div key={index} className="border rounded-md p-3 bg-background">
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-primary" />
+                          <span className="font-medium text-sm">{result.fileName}</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs">
+                          Score: {result.score.toFixed(3)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {result.content.substring(0, 150)}...
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             {debugInfo && (
               <div className="mt-2">
                 <h5 className="text-sm font-medium mb-2">Detalhes da busca:</h5>
@@ -286,7 +335,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
             
             {testResults && (
               <div className="mt-2">
-                <h5 className="text-sm font-medium mb-2">Resultados:</h5>
+                <h5 className="text-sm font-medium mb-2">Contexto relevante:</h5>
                 <div className="bg-background border rounded-md p-2 max-h-60 overflow-y-auto">
                   <pre className="text-xs whitespace-pre-wrap">{testResults}</pre>
                 </div>
@@ -294,9 +343,9 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    onClick={() => setTestResults(null)}
+                    onClick={clearTestResults}
                   >
-                    Limpar
+                    Limpar resultados
                   </Button>
                 </div>
               </div>

@@ -29,8 +29,9 @@ export class EmbeddingService {
   private documents: Map<string, IndexedDocument> = new Map();
   private embeddingsCache: Map<string, number[]> = new Map();
   private ready = false;
-  private minRelevanceScore = 0.2; // Reduzido de 0.5 para 0.2 para ser mais inclusivo
+  private minRelevanceScore = 0.15; // Reduzido para ser mais inclusivo com consultas curtas
   private processingPromises: Map<string, Promise<any>> = new Map(); // Para rastrear promessas ativas
+  private debug = true; // Ativar logs detalhados
 
   constructor() {
     console.log("Embedding service initialized");
@@ -81,6 +82,10 @@ export class EmbeddingService {
         fileId,
         fileName
       });
+    }
+    
+    if (this.debug) {
+      console.log(`Chunked text into ${chunks.length} chunks for file ${fileName}`);
     }
     
     return chunks;
@@ -164,7 +169,9 @@ export class EmbeddingService {
 
   // Adiciona um documento ao índice
   public addDocument(fileId: string, fileName: string, content: string): void {
-    console.log(`Adding document to embedding index: ${fileName}`);
+    if (this.debug) {
+      console.log(`Adding document to embedding index: ${fileName} (${content.length} chars)`);
+    }
     
     if (this.documents.has(fileId)) {
       console.log(`Document ${fileId} already exists in index, updating`);
@@ -209,9 +216,14 @@ export class EmbeddingService {
       return [];
     }
     
-    console.log(`Searching for relevant chunks for query: "${query.substring(0, 30)}..."`);
+    if (this.debug) {
+      console.log(`Searching for relevant chunks for query: "${query}"`);
+    }
     
     try {
+      // Para consultas muito curtas, adicione tratamento especial
+      const isShortQuery = query.split(/\s+/).filter(w => w.length > 2).length <= 3;
+      
       // Pré-processar a query da mesma forma que os documentos
       const queryEmbedding = this.createEmbedding(query);
       const results: Array<{content: string; fileName: string; score: number}> = [];
@@ -232,14 +244,23 @@ export class EmbeddingService {
               if (contentLower.includes(word)) {
                 // Maior boost para palavras mais longas (provavelmente mais significativas)
                 keywordBoost += Math.min(0.3, word.length / 15);
+                
+                // Boost adicional para consultas curtas
+                if (isShortQuery) {
+                  keywordBoost += 0.1;
+                }
               }
             }
             
             // Pontuação final é a similaridade de cosseno + boost de palavras-chave
             const finalScore = score + keywordBoost;
             
+            // Para consultas curtas, reduzir o threshold de inclusão
+            const effectiveThreshold = isShortQuery ? 
+              this.minRelevanceScore * 0.7 : this.minRelevanceScore;
+            
             // Só adiciona resultados acima do limite mínimo de relevância
-            if (finalScore > this.minRelevanceScore) {
+            if (finalScore > effectiveThreshold) {
               results.push({
                 content: chunk.content,
                 fileName: chunk.fileName,
@@ -256,8 +277,18 @@ export class EmbeddingService {
       // Log de debug para ajudar a entender os resultados
       if (results.length > 0) {
         console.log(`Top result score: ${results[0].score.toFixed(3)} from file: ${results[0].fileName}`);
+        
+        if (this.debug && results.length > 0) {
+          console.log("Top results details:");
+          results.slice(0, 3).forEach((r, i) => {
+            console.log(`${i+1}. File: ${r.fileName}, Score: ${r.score.toFixed(3)}`);
+            console.log(`   Preview: ${r.content.substring(0, 100)}...`);
+          });
+        }
       } else {
-        console.log(`No results above threshold (${this.minRelevanceScore})`);
+        const effectiveThreshold = isShortQuery ? 
+          this.minRelevanceScore * 0.7 : this.minRelevanceScore;
+        console.log(`No results above threshold (${effectiveThreshold})`);
       }
       
       // Retornar os top-K resultados
@@ -311,15 +342,72 @@ export class EmbeddingService {
   // Método para obter contexto relevante para uma query
   public async getRelevantContext(query: string, maxChars: number = 4000): Promise<string> {
     try {
+      // Verificação especial para consultas curtas relacionadas a termos específicos ou siglas
+      const normalizedQuery = query.toLowerCase().trim();
+      const specialTerms = ["cpj", "cpj-3c", "spiced", "office.adv"];
+      
+      let specialTermBoost = false;
+      for (const term of specialTerms) {
+        if (normalizedQuery.includes(term)) {
+          specialTermBoost = true;
+          console.log(`Detected special term "${term}" in query. Applying special handling.`);
+          break;
+        }
+      }
+      
       // Gerar um ID para esta operação de busca específica
       const operationId = `query_${this.generateHash(query)}_${Date.now()}`;
       
       // Criar a promessa com timeout
       const contextPromise = new Promise<string>(async (resolve) => {
-        // Buscar um número maior de resultados (5) para garantir mais contexto
-        const results = await this.searchAsync(query, 5);
+        // Buscar um número maior de resultados para garantir mais contexto
+        // Para termos especiais, aumentamos ainda mais o número de resultados
+        const numResults = specialTermBoost ? 8 : 5;
+        const results = await this.searchAsync(query, numResults);
         
         if (results.length === 0) {
+          // Se não achou nada com busca normal, tentar busca direta por termos especiais
+          if (specialTermBoost) {
+            console.log("Trying direct file matching for special terms...");
+            
+            // Busca direta nos nomes dos arquivos
+            const directMatches: SearchResult[] = [];
+            this.documents.forEach(doc => {
+              for (const term of specialTerms) {
+                if (doc.fileName.toLowerCase().includes(term) && 
+                    normalizedQuery.includes(term)) {
+                  // Encontrou um arquivo que contém o termo especial
+                  directMatches.push({
+                    content: doc.chunks[0]?.content || "",
+                    fileName: doc.fileName,
+                    score: 0.95 // Score alto para forçar inclusão
+                  });
+                  console.log(`Direct match found: ${doc.fileName} for term "${term}"`);
+                }
+              }
+            });
+            
+            if (directMatches.length > 0) {
+              let context = "Informações relevantes sobre a consulta:\n\n";
+              let totalChars = context.length;
+              
+              for (const result of directMatches) {
+                const entry = `### Conteúdo de ${result.fileName} (correspondência direta):\n${result.content}\n\n`;
+                
+                if (totalChars + entry.length <= maxChars) {
+                  context += entry;
+                  totalChars += entry.length;
+                } else {
+                  break;
+                }
+              }
+              
+              console.log(`Generated direct match context with ${totalChars} characters`);
+              resolve(context);
+              return;
+            }
+          }
+          
           console.log("No relevant context found for query");
           resolve("");
           return;
@@ -406,6 +494,23 @@ export class EmbeddingService {
     
     console.log(`Reindexed ${currentDocuments.size} documents`);
     this.ready = this.documents.size > 0;
+  }
+  
+  // Obter mais detalhes sobre o documento
+  public getDocumentDetails(fileId: string): { fileName: string; chunkCount: number } | null {
+    const doc = this.documents.get(fileId);
+    if (!doc) return null;
+    
+    return {
+      fileName: doc.fileName,
+      chunkCount: doc.chunks.length
+    };
+  }
+  
+  // Ativar ou desativar debug
+  public setDebug(enable: boolean): void {
+    this.debug = enable;
+    console.log(`Debug mode ${enable ? 'enabled' : 'disabled'}`);
   }
 }
 
