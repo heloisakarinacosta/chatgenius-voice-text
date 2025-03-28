@@ -68,53 +68,68 @@ export const createEmbedding = (text: string): number[] => {
 const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
   let messages = [...options.messages];
   
+  // Inicializa o serviço de embeddings se necessário
+  if (!embeddingService.isReady() && options.trainingFiles && options.trainingFiles.length > 0) {
+    await embeddingService.initialize();
+  }
+  
   // Verifica se há uma pergunta do usuário para buscar contexto relevante
   const userMessages = messages.filter(msg => msg.role === "user");
   const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
   
-  // Utiliza RAG apenas se existirem arquivos de treinamento e o serviço estiver pronto
-  if (options.trainingFiles && options.trainingFiles.length > 0 && lastUserMessage) {
-    // Indexa os arquivos no serviço de embeddings, se ainda não estiverem indexados
-    options.trainingFiles.forEach(file => {
-      // Apenas indexa se o serviço estiver disponível
-      if (embeddingService && typeof embeddingService.addDocument === 'function') {
-        embeddingService.addDocument(file.id, file.name, file.content);
+  // Utiliza RAG apenas se o sistema estiver habilitado e houver uma mensagem do usuário
+  if (embeddingService.isEnabled() && lastUserMessage && lastUserMessage.content.trim()) {
+    // Indexa arquivos apenas se eles não estiverem indexados
+    if (options.trainingFiles && options.trainingFiles.length > 0) {
+      // Verifica se os documentos já estão indexados
+      const stats = embeddingService.getStats();
+      if (stats.documentCount < options.trainingFiles.length) {
+        console.log(`Indexing ${options.trainingFiles.length} training files...`);
+        
+        for (const file of options.trainingFiles) {
+          embeddingService.addDocument(file.id, file.name, file.content);
+        }
       }
-    });
+    }
     
-    // Usa o sistema RAG se houver uma mensagem do usuário e o serviço estiver pronto
-    if (embeddingService && embeddingService.isReady()) {
+    // Usa o sistema RAG para obter contexto relevante
+    try {
       console.log("Usando sistema RAG para buscar contexto relevante");
       
       // Obtém contexto relevante para a última mensagem do usuário
-      try {
-        const contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
-        console.log(`Contexto relevante recuperado: ${contextContent.length} caracteres`);
+      const contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
+      
+      // Somente adiciona o contexto se algo relevante foi encontrado
+      if (contextContent && contextContent.length > 0) {
+        // Insere o conteúdo de treinamento após a mensagem do sistema
+        const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
         
-        // Somente adiciona o contexto se algo relevante foi encontrado
-        if (contextContent && contextContent.length > 0) {
-          // Insere o conteúdo de treinamento após a mensagem do sistema
-          const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-          
-          if (systemMessageIndex !== -1) {
-            // Anexa à mensagem do sistema existente
-            messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
-          } else {
-            // Adiciona como uma nova mensagem do sistema se não existir nenhuma
-            messages.unshift({
-              role: "system",
-              content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
-            });
-          }
-          
-          console.log("Contexto relevante adicionado à conversa");
+        if (systemMessageIndex !== -1) {
+          // Anexa à mensagem do sistema existente
+          messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
         } else {
-          console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
+          // Adiciona como uma nova mensagem do sistema se não existir nenhuma
+          messages.unshift({
+            role: "system",
+            content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
+          });
         }
-      } catch (error) {
-        console.error("Erro ao obter contexto relevante:", error);
-        // Não adiciona contexto em caso de erro
+        
+        console.log("Contexto relevante adicionado à conversa");
+      } else {
+        console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
       }
+    } catch (error) {
+      console.error("Erro ao obter contexto relevante:", error);
+      // Não adiciona contexto em caso de erro
+    }
+  } else {
+    if (!embeddingService.isEnabled()) {
+      console.log("Sistema RAG está desabilitado");
+    } else if (!lastUserMessage) {
+      console.log("Não há mensagem do usuário para buscar contexto");
+    } else if (!lastUserMessage.content.trim()) {
+      console.log("Mensagem do usuário está vazia");
     } else {
       console.log("Sistema RAG não está pronto ou não há mensagem do usuário");
     }

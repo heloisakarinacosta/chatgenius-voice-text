@@ -1,3 +1,4 @@
+
 import { v4 as uuidv4 } from 'uuid';
 import { createEmbedding } from './openai';
 
@@ -27,12 +28,15 @@ let documents: Document[] = [];
 let chunks: Chunk[] = [];
 let isInitialized = false;
 let debugMode = false;
+let ragEnabled = true; // Por padrão está habilitado
 
 // Configurações
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
 const SIMILARITY_THRESHOLD = 0.75;
+const SIMILARITY_THRESHOLD_SHORT_QUERY = 0.6; // Limiar mais baixo para consultas curtas
 const MAX_RESULTS = 3;
+const SHORT_QUERY_LENGTH = 15; // Define o que é uma consulta curta
 
 /**
  * Inicializa o serviço de embeddings
@@ -41,6 +45,13 @@ export const initialize = async (): Promise<void> => {
   if (isInitialized) return;
   
   try {
+    // Carrega configuração do localStorage
+    const enabled = localStorage.getItem('rag_enabled');
+    if (enabled !== null) {
+      ragEnabled = enabled === 'true';
+      console.log(`RAG system initialized as ${ragEnabled ? 'enabled' : 'disabled'}`);
+    }
+    
     // Tenta carregar documentos do localStorage
     const storedDocuments = localStorage.getItem('rag_documents');
     const storedChunks = localStorage.getItem('rag_chunks');
@@ -63,6 +74,7 @@ export const initialize = async (): Promise<void> => {
  * @param enabled - Se o sistema RAG deve estar habilitado
  */
 export const setEnabled = (enabled: boolean) => {
+  ragEnabled = enabled;
   console.log(`RAG system ${enabled ? 'enabled' : 'disabled'}`);
   localStorage.setItem('rag_enabled', enabled ? 'true' : 'false');
 };
@@ -73,8 +85,7 @@ export const setEnabled = (enabled: boolean) => {
  * @returns true se o sistema RAG estiver habilitado, false caso contrário
  */
 export const isEnabled = (): boolean => {
-  const enabled = localStorage.getItem('rag_enabled');
-  return enabled !== 'false'; // Por padrão está habilitado
+  return ragEnabled;
 };
 
 /**
@@ -106,7 +117,13 @@ export const addDocument = async (id: string, name: string, content: string): Pr
     const existingDocIndex = documents.findIndex(doc => doc.id === id);
     
     if (existingDocIndex !== -1) {
-      console.log(`Document ${id} already exists, updating...`);
+      // Se o conteúdo do documento não mudou, não reprocesse
+      if (documents[existingDocIndex].content === content) {
+        console.log(`Document ${id} already exists with the same content, skipping update`);
+        return;
+      }
+      
+      console.log(`Document ${id} exists but content changed, updating...`);
       
       // Remove chunks existentes deste documento
       chunks = chunks.filter(chunk => chunk.documentId !== id);
@@ -204,6 +221,19 @@ export const reindexAllDocuments = async (): Promise<void> => {
 };
 
 /**
+ * Verifica se uma consulta contém termos específicos importantes
+ */
+const containsSpecificTerms = (query: string): boolean => {
+  const specificTerms = [
+    'cpj', 'cpj-3c', 'office.adv', 'spiced', 'cobrança', 'recuperação',
+    'negociação', 'whatsapp', 'metodologia'
+  ];
+  
+  const lowerQuery = query.toLowerCase();
+  return specificTerms.some(term => lowerQuery.includes(term.toLowerCase()));
+};
+
+/**
  * Busca documentos relevantes para uma consulta
  */
 export const search = (query: string, maxResults: number = MAX_RESULTS): SearchResult[] => {
@@ -215,6 +245,18 @@ export const search = (query: string, maxResults: number = MAX_RESULTS): SearchR
   try {
     // Gera embedding para a consulta
     const queryEmbedding = createEmbedding(query);
+    
+    // Define o limiar de similaridade com base no tamanho da consulta 
+    // ou se contém termos específicos importantes
+    const isShortQuery = query.length <= SHORT_QUERY_LENGTH;
+    const hasSpecificTerms = containsSpecificTerms(query);
+    const threshold = (isShortQuery || hasSpecificTerms) ? 
+      SIMILARITY_THRESHOLD_SHORT_QUERY : SIMILARITY_THRESHOLD;
+    
+    if (debugMode) {
+      console.log(`Using similarity threshold: ${threshold} for query: "${query}"`);
+      console.log(`Short query: ${isShortQuery}, Has specific terms: ${hasSpecificTerms}`);
+    }
     
     // Calcula similaridade com todos os chunks
     const results = chunks
@@ -231,15 +273,21 @@ export const search = (query: string, maxResults: number = MAX_RESULTS): SearchR
           score: similarity
         };
       })
-      .filter(result => result.score > SIMILARITY_THRESHOLD)
+      .filter(result => result.score > threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, maxResults);
     
     if (debugMode) {
-      console.log(`Found ${results.length} relevant chunks for query: ${query}`);
+      console.log(`Searching for relevant chunks for query: "${query}"`);
+      console.log(`Found ${results.length} relevant chunks (from ${chunks.length} total)`);
       results.forEach((r, i) => {
         console.log(`Result ${i+1}: ${r.fileName}, Score: ${r.score.toFixed(4)}`);
       });
+    } else {
+      console.log(`Searching for relevant chunks for query: "${query}"`);
+      console.log(`Found ${results.length} relevant chunks (from ${
+        chunks.filter(c => c.embedding && c.embedding.length > 0).length
+      } total above threshold ${threshold.toFixed(2)})`);
     }
     
     return results;
@@ -272,6 +320,7 @@ export const getRelevantContext = async (query: string): Promise<string> => {
       return `### Trecho de ${result.fileName} (relevância: ${(result.score * 100).toFixed(1)}%):\n\n${result.content}\n\n`;
     }).join("\n");
     
+    console.log(`Contexto relevante recuperado: ${context.length} caracteres`);
     return context;
   } catch (error) {
     console.error("Error getting relevant context:", error);
