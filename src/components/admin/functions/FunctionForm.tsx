@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -5,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Search } from "lucide-react";
+import { AlertTriangle, Search, RefreshCw } from "lucide-react";
 import { AgentFunction } from "@/contexts/ChatContext";
 import { embeddingService } from "@/utils/embeddingService";
 
@@ -36,6 +37,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   const [testResults, setTestResults] = useState<string | null>(null);
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   
   // Function to handle parameter changes
   const handleParameterChange = (value: string) => {
@@ -77,7 +79,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       }
       addOrUpdateFunction();
     } catch (e) {
-      toast.error("Invalid parameters JSON: " + e.message);
+      toast.error("Invalid parameters JSON: " + (e as Error).message);
     }
   };
   
@@ -94,6 +96,26 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
     
     try {
       setIsSearching(true);
+      setDebugInfo(null);
+      
+      // Buscar resultados brutos para mostrar detalhes
+      const rawResults = embeddingService.search(testQuery, 5);
+      
+      // Construir informações de debug
+      let debug = "Detalhes da busca:\n";
+      if (rawResults.length > 0) {
+        debug += rawResults.map((r, i) => 
+          `${i+1}. Arquivo: ${r.fileName}\n   Score: ${r.score.toFixed(4)}\n   Primeiros 50 chars: ${r.content.substring(0, 50)}...\n`
+        ).join("\n");
+      } else {
+        debug += "Nenhum resultado encontrado acima do limiar de relevância.\n";
+        debug += "Isso pode indicar que o texto que você está procurando não está nos documentos,\n";
+        debug += "ou que o algoritmo de relevância não encontrou correspondência suficiente.\n";
+      }
+      
+      // Definir detalhes da busca
+      setDebugInfo(debug);
+      
       // Busca contexto relevante usando await para lidar com a Promise
       const context = await embeddingService.getRelevantContext(testQuery);
       
@@ -110,6 +132,17 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       setTestResults("Erro ao realizar busca: " + (error as Error).message);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const reindexDocuments = () => {
+    try {
+      // Reindexar todos os documentos com o algoritmo atualizado
+      embeddingService.reindexAllDocuments();
+      toast.success("Documentos reindexados com sucesso");
+    } catch (error) {
+      console.error("Erro ao reindexar documentos:", error);
+      toast.error("Erro ao reindexar documentos");
     }
   };
 
@@ -197,14 +230,25 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       
       {/* Painel de teste de RAG */}
       <div className="border-t pt-4 mt-4">
-        <Button 
-          variant="outline" 
-          type="button" 
-          onClick={() => setShowTestPanel(!showTestPanel)}
-          className="mb-4"
-        >
-          {showTestPanel ? "Ocultar Teste RAG" : "Testar Sistema RAG"}
-        </Button>
+        <div className="flex gap-2 mb-4">
+          <Button 
+            variant="outline" 
+            type="button" 
+            onClick={() => setShowTestPanel(!showTestPanel)}
+          >
+            {showTestPanel ? "Ocultar Teste RAG" : "Testar Sistema RAG"}
+          </Button>
+          
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={reindexDocuments}
+            className="flex items-center gap-1"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reindexar Documentos
+          </Button>
+        </div>
         
         {showTestPanel && (
           <div className="space-y-4 p-4 border rounded-md bg-muted/30">
@@ -230,6 +274,15 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
                 {isSearching ? "Buscando..." : "Testar"}
               </Button>
             </div>
+            
+            {debugInfo && (
+              <div className="mt-2">
+                <h5 className="text-sm font-medium mb-2">Detalhes da busca:</h5>
+                <div className="bg-background border rounded-md p-2 max-h-40 overflow-y-auto">
+                  <pre className="text-xs whitespace-pre-wrap">{debugInfo}</pre>
+                </div>
+              </div>
+            )}
             
             {testResults && (
               <div className="mt-2">

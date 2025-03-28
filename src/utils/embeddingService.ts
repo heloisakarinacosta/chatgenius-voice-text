@@ -29,7 +29,7 @@ export class EmbeddingService {
   private documents: Map<string, IndexedDocument> = new Map();
   private embeddingsCache: Map<string, number[]> = new Map();
   private ready = false;
-  private minRelevanceScore = 0.5; // Limite mínimo de relevância para considerar um trecho relevante
+  private minRelevanceScore = 0.2; // Reduzido de 0.5 para 0.2 para ser mais inclusivo
   private processingPromises: Map<string, Promise<any>> = new Map(); // Para rastrear promessas ativas
 
   constructor() {
@@ -86,8 +86,7 @@ export class EmbeddingService {
     return chunks;
   }
 
-  // Implementação simplificada de embeddings - usa TF-IDF para vetorização
-  // Em produção real, usaríamos a API de embeddings da OpenAI ou outro serviço
+  // Implementação melhorada de embeddings
   private createEmbedding(text: string): number[] {
     const hash = this.generateHash(text);
     
@@ -96,23 +95,34 @@ export class EmbeddingService {
       return this.embeddingsCache.get(hash)!;
     }
     
-    // Implementação muito simplificada de vetorização
-    // Em produção usaríamos embeddings reais
-    const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 3);
-    const wordSet = new Set(words);
+    // Pré-processamento: converter para minúsculas, remover pontuação, tokenizar
+    const preprocessedText = text.toLowerCase()
+      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ")
+      .replace(/\s{2,}/g, " ");
     
-    // Criar um vetor de 100 dimensões baseado nos hashes das palavras
-    const embedding = new Array(100).fill(0);
+    // Extrair palavras importantes (mais de 2 caracteres)
+    const words = preprocessedText.split(/\W+/).filter(w => w.length > 2);
     
-    wordSet.forEach(word => {
+    // Criar um vetor de 150 dimensões para melhor representação semântica
+    const embedding = new Array(150).fill(0);
+    
+    words.forEach(word => {
+      // Usar hashCode para distribuir palavras pelo vetor
       const wordHash = this.hashCode(word);
-      const position = Math.abs(wordHash) % 100;
-      embedding[position] += 1;
+      const position = Math.abs(wordHash) % 150;
+      
+      // Aumentar a importância de palavras mais longas
+      const wordImportance = Math.min(1.5, word.length / 4);
+      embedding[position] += wordImportance;
+      
+      // Adicionar também em posições vizinhas para melhorar matches parciais
+      if (position > 0) embedding[position - 1] += wordImportance * 0.5;
+      if (position < 149) embedding[position + 1] += wordImportance * 0.5;
     });
     
     // Normalizar o vetor
-    const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-    const normalized = embedding.map(val => val / (magnitude || 1));
+    const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0)) || 1;
+    const normalized = embedding.map(val => val / magnitude);
     
     // Armazenar em cache
     this.embeddingsCache.set(hash, normalized);
@@ -120,7 +130,7 @@ export class EmbeddingService {
     return normalized;
   }
 
-  // Função de hash simples para strings
+  // Função de hash melhorada para strings
   private hashCode(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -131,16 +141,25 @@ export class EmbeddingService {
     return hash;
   }
 
-  // Calcula similaridade de cosseno entre dois vetores
+  // Calcula similaridade de cosseno com ajustes para melhorar relevância
   private cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) return 0;
     
     let dotProduct = 0;
+    let matchedDimensions = 0;
+    
     for (let i = 0; i < a.length; i++) {
+      // Contabilizar quantas dimensões têm valores significativos em ambos os vetores
+      if (a[i] > 0.01 && b[i] > 0.01) {
+        matchedDimensions++;
+      }
       dotProduct += a[i] * b[i];
     }
     
-    return dotProduct;
+    // Bônus para vetores que compartilham mais dimensões ativadas
+    const dimensionBonus = Math.min(0.3, matchedDimensions / 50);
+    
+    return dotProduct + dimensionBonus;
   }
 
   // Adiciona um documento ao índice
@@ -183,7 +202,7 @@ export class EmbeddingService {
     }
   }
 
-  // Busca por documentos relevantes para uma query com timeout
+  // Busca por documentos relevantes para uma query
   public search(query: string, topK: number = 3): SearchResult[] {
     if (!this.ready || this.documents.size === 0) {
       console.log("No documents in index or service not ready");
@@ -193,6 +212,7 @@ export class EmbeddingService {
     console.log(`Searching for relevant chunks for query: "${query.substring(0, 30)}..."`);
     
     try {
+      // Pré-processar a query da mesma forma que os documentos
       const queryEmbedding = this.createEmbedding(query);
       const results: Array<{content: string; fileName: string; score: number}> = [];
       
@@ -202,12 +222,28 @@ export class EmbeddingService {
           if (chunk.embedding) {
             const score = this.cosineSimilarity(queryEmbedding, chunk.embedding);
             
+            // Adicionar um boost para matches diretos de palavras-chave
+            let keywordBoost = 0;
+            const queryWords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+            const contentLower = chunk.content.toLowerCase();
+            
+            // Verificar palavras-chave exatas no conteúdo
+            for (const word of queryWords) {
+              if (contentLower.includes(word)) {
+                // Maior boost para palavras mais longas (provavelmente mais significativas)
+                keywordBoost += Math.min(0.3, word.length / 15);
+              }
+            }
+            
+            // Pontuação final é a similaridade de cosseno + boost de palavras-chave
+            const finalScore = score + keywordBoost;
+            
             // Só adiciona resultados acima do limite mínimo de relevância
-            if (score > this.minRelevanceScore) {
+            if (finalScore > this.minRelevanceScore) {
               results.push({
                 content: chunk.content,
                 fileName: chunk.fileName,
-                score
+                score: finalScore
               });
             }
           }
@@ -216,6 +252,13 @@ export class EmbeddingService {
       
       // Ordenar por similaridade
       results.sort((a, b) => b.score - a.score);
+      
+      // Log de debug para ajudar a entender os resultados
+      if (results.length > 0) {
+        console.log(`Top result score: ${results[0].score.toFixed(3)} from file: ${results[0].fileName}`);
+      } else {
+        console.log(`No results above threshold (${this.minRelevanceScore})`);
+      }
       
       // Retornar os top-K resultados
       const topResults = results.slice(0, topK);
@@ -273,6 +316,7 @@ export class EmbeddingService {
       
       // Criar a promessa com timeout
       const contextPromise = new Promise<string>(async (resolve) => {
+        // Buscar um número maior de resultados (5) para garantir mais contexto
         const results = await this.searchAsync(query, 5);
         
         if (results.length === 0) {
@@ -283,6 +327,12 @@ export class EmbeddingService {
         
         let context = "Informações relevantes sobre a consulta:\n\n";
         let totalChars = context.length;
+        
+        // Debug para mostrar todos os resultados encontrados
+        console.log(`Found ${results.length} results for query "${query}":`);
+        results.forEach((r, i) => {
+          console.log(`Result ${i+1}: Score ${r.score.toFixed(3)}, File: ${r.fileName}`);
+        });
         
         // Adiciona cada resultado ao contexto, mantendo abaixo do limite de caracteres
         for (const result of results) {
@@ -333,6 +383,29 @@ export class EmbeddingService {
       console.error("Error getting relevant context:", error);
       return "";
     }
+  }
+
+  // Limpar a memória e reindexar todos os documentos
+  public reindexAllDocuments(): void {
+    console.log("Reindexing all documents...");
+    
+    // Guardar referência para os documentos atuais
+    const currentDocuments = new Map(this.documents);
+    
+    // Limpar embeddings e documentos
+    this.embeddingsCache.clear();
+    this.documents.clear();
+    this.ready = false;
+    
+    // Reindexar cada documento
+    currentDocuments.forEach(doc => {
+      // Para cada documento, precisamos acessar um original para obter o conteúdo
+      const originalContent = doc.chunks.map(chunk => chunk.content).join("\n\n");
+      this.addDocument(doc.fileId, doc.fileName, originalContent);
+    });
+    
+    console.log(`Reindexed ${currentDocuments.size} documents`);
+    this.ready = this.documents.size > 0;
   }
 }
 
