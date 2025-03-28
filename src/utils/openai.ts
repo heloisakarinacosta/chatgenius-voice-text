@@ -1,4 +1,3 @@
-
 import CryptoJS from 'crypto-js';
 import { embeddingService } from './embeddingService';
 
@@ -29,6 +28,7 @@ interface OpenAICompletionOptions {
     parameters: Record<string, any>;
   }>;
   detectEmotion?: boolean;
+  stream?: boolean;
 }
 
 // Interface para função de conclusão da OpenAI
@@ -36,6 +36,13 @@ interface OpenAIFunction {
   name: string;
   description: string;
   parameters: Record<string, any>;
+}
+
+// Interface de callbacks para streaming
+interface StreamCallbacks {
+  onMessage: (chunk: string) => void;
+  onComplete: (fullMessage: string) => void;
+  onError: (error: Error) => void;
 }
 
 // Prepara mensagens para a API da OpenAI, agora usando o sistema RAG
@@ -170,5 +177,199 @@ export const callOpenAI = async (options: OpenAICompletionOptions, apiKey: strin
   } catch (error) {
     console.error("Erro ao chamar a API OpenAI:", error);
     throw error;
+  }
+};
+
+// Transcrição de áudio usando a API Whisper da OpenAI
+export const transcribeAudio = async (audioBlob: Blob, apiKey: string): Promise<string> => {
+  try {
+    console.log("Enviando áudio para transcrição via API Whisper");
+    
+    if (!apiKey) {
+      throw new Error("API key não fornecida para transcrição");
+    }
+    
+    const formData = new FormData();
+    formData.append("file", audioBlob, "recording.webm");
+    formData.append("model", "whisper-1");
+    formData.append("language", "pt");
+    formData.append("response_format", "json");
+    
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error("Erro na API de transcrição:", errorData);
+      throw new Error(`Erro na API de transcrição: ${response.status} - ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.text || "";
+  } catch (error) {
+    console.error("Erro ao transcrever áudio:", error);
+    throw error;
+  }
+};
+
+// Geração de fala usando a API TTS da OpenAI
+export const generateSpeech = async (
+  text: string, 
+  voiceId: string = 'alloy', 
+  apiKey: string
+): Promise<ArrayBuffer> => {
+  try {
+    console.log(`Gerando fala para texto com ${text.length} caracteres, voz: ${voiceId}`);
+    
+    if (!apiKey) {
+      throw new Error("API key não fornecida para geração de fala");
+    }
+    
+    if (!text || text.trim() === "") {
+      throw new Error("Texto vazio fornecido para geração de fala");
+    }
+    
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        voice: voiceId,
+        input: text,
+        speed: 1.0
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.text().catch(() => null);
+      console.error("Erro na API de geração de fala:", errorData);
+      throw new Error(`Erro na API de geração de fala: ${response.status} - ${response.statusText}`);
+    }
+    
+    return await response.arrayBuffer();
+  } catch (error) {
+    console.error("Erro ao gerar fala:", error);
+    throw error;
+  }
+};
+
+// Versão de streaming para a API da OpenAI
+export const streamOpenAI = async (
+  options: OpenAICompletionOptions, 
+  apiKey: string,
+  callbacks: StreamCallbacks
+): Promise<void> => {
+  try {
+    console.log("Chamando API OpenAI em modo streaming com modelo:", options.model);
+    
+    if (!apiKey) {
+      throw new Error("API key não fornecida");
+    }
+    
+    // Prepara as mensagens para a API
+    const messages = prepareMessages(options);
+    
+    // Log do tamanho do contexto sendo enviado para a API
+    const totalContextSize = messages.reduce((sum, msg) => sum + msg.content.length, 0);
+    console.log(`Enviando contexto para OpenAI em streaming: ${totalContextSize} caracteres`);
+    
+    // Estabelece os parâmetros padrão
+    const model = options.model || "gpt-3.5-turbo";
+    const temperature = options.temperature !== undefined ? options.temperature : 0.7;
+    const max_tokens = options.maxTokens || 1000;
+    
+    // Constrói o corpo da solicitação
+    const requestBody: Record<string, any> = {
+      model,
+      messages,
+      temperature,
+      max_tokens,
+      stream: true
+    };
+    
+    // Adiciona funções se fornecidas
+    if (options.functions && options.functions.length > 0) {
+      requestBody.functions = options.functions;
+      requestBody.function_call = "auto";
+    }
+    
+    // Faz a chamada para a API da OpenAI
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    // Verifica se a resposta foi bem-sucedida
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error("Erro na API OpenAI:", errorData);
+      callbacks.onError(new Error(`Erro na API OpenAI: ${response.status} - ${response.statusText}`));
+      return;
+    }
+    
+    if (!response.body) {
+      callbacks.onError(new Error("Response body is null"));
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let fullMessage = "";
+    let buffer = "";
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+      
+      // Processa as linhas completas
+      while (buffer.includes('\n')) {
+        const lineEnd = buffer.indexOf('\n');
+        const line = buffer.substring(0, lineEnd).trim();
+        buffer = buffer.substring(lineEnd + 1);
+        
+        if (!line) continue;
+        if (line === 'data: [DONE]') break;
+        
+        if (line.startsWith('data: ')) {
+          try {
+            const jsonData = JSON.parse(line.substring(6));
+            
+            if (jsonData.choices && jsonData.choices.length > 0) {
+              const content = jsonData.choices[0].delta?.content;
+              
+              if (content) {
+                fullMessage += content;
+                callbacks.onMessage(content);
+              }
+            }
+          } catch (e) {
+            console.warn("Erro ao analisar linha JSON:", e);
+            continue;
+          }
+        }
+      }
+    }
+    
+    callbacks.onComplete(fullMessage);
+    console.log("Streaming concluído com sucesso");
+    
+  } catch (error) {
+    console.error("Erro no streaming da OpenAI:", error);
+    callbacks.onError(error instanceof Error ? error : new Error(String(error)));
   }
 };
