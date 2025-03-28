@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrainingFile } from "@/types/chat";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2, Database } from "lucide-react";
+import { File, FileUp, Trash2, FileText, AlertCircle, CheckCircle2, Database, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";

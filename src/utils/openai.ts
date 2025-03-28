@@ -1,4 +1,3 @@
-
 import CryptoJS from 'crypto-js';
 import { embeddingService } from './embeddingService';
 
@@ -77,7 +76,7 @@ export const createEmbedding = (text: string): number[] => {
   return embedding;
 };
 
-// Prepara mensagens para a API da OpenAI, agora usando o sistema RAG
+// Prepara mensagens para a API da OpenAI, agora usando o sistema RAG otimizado
 const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
   let messages = [...options.messages];
   
