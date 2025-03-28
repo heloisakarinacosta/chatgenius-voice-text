@@ -1,3 +1,4 @@
+
 import CryptoJS from 'crypto-js';
 import { embeddingService } from './embeddingService';
 
@@ -44,6 +45,24 @@ interface StreamCallbacks {
   onComplete: (fullMessage: string) => void;
   onError: (error: Error) => void;
 }
+
+// Função para criar embeddings de texto usando o modelo da OpenAI
+export const createEmbedding = (text: string): number[] => {
+  // Implementação simples de hash para simular embeddings
+  // Em um ambiente de produção, você deve chamar a API de embeddings da OpenAI
+  const hash = CryptoJS.SHA256(text).toString();
+  
+  // Transformar o hash em um array de números para simular um embedding
+  const embedding = Array.from({ length: 384 }, (_, i) => {
+    // Usar substrings do hash para gerar os valores do embedding
+    const value = parseInt(hash.substring((i * 2) % hash.length, (i * 2 + 2) % hash.length), 16);
+    // Normalizar para um valor entre -1 e 1
+    return (value / 65535) * 2 - 1;
+  });
+  
+  console.log(`Generated embedding for text: ${text.substring(0, 50)}...`);
+  return embedding;
+};
 
 // Prepara mensagens para a API da OpenAI, agora usando o sistema RAG
 const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
