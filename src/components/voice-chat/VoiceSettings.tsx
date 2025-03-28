@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -7,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { toast } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast"; // Changed from toast import
+import { embeddingService } from "@/utils/embeddingService"; // Added proper import
 
 interface VoiceSettingsProps {
   settings: {
@@ -30,6 +32,7 @@ const RagSettings = () => {
     chunkCount: number;
   } | null>(null);
   const [isReindexing, setIsReindexing] = useState(false);
+  const { toast } = useToast(); // Get toast function from useToast hook
   
   useEffect(() => {
     const ragEnabledValue = embeddingService.isEnabled();
@@ -47,19 +50,28 @@ const RagSettings = () => {
   const handleRagToggle = (value: boolean) => {
     embeddingService.setEnabled(value);
     setRagEnabled(value);
-    toast.success(`Sistema RAG ${value ? 'ativado' : 'desativado'}`);
+    toast({
+      title: `Sistema RAG ${value ? 'ativado' : 'desativado'}`
+    });
   };
   
   const handleReindex = async () => {
     try {
       setIsReindexing(true);
-      toast.info("Reindexando documentos...");
+      toast({
+        title: "Reindexando documentos...",
+      });
       await embeddingService.reindexAllDocuments();
       updateIndexStats();
-      toast.success("Reindexação concluída com sucesso");
+      toast({
+        title: "Reindexação concluída com sucesso"
+      });
     } catch (error) {
       console.error("Erro ao reindexar documentos:", error);
-      toast.error("Erro ao reindexar documentos");
+      toast({
+        title: "Erro ao reindexar documentos",
+        variant: "destructive"
+      });
     } finally {
       setIsReindexing(false);
     }
@@ -119,6 +131,7 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
   onCancel
 }) => {
   const [formValues, setFormValues] = useState(settings);
+  const { toast } = useToast(); // Get toast function from useToast hook
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -138,6 +151,9 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formValues);
+    toast({
+      title: "Configurações salvas com sucesso"
+    });
   };
 
   return (
