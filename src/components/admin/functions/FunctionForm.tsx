@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -36,6 +35,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
   const [testQuery, setTestQuery] = useState("");
   const [testResults, setTestResults] = useState<string | null>(null);
   const [showTestPanel, setShowTestPanel] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   
   // Function to handle parameter changes
   const handleParameterChange = (value: string) => {
@@ -49,7 +49,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
       JSON.parse(value);
       setParametersError(null);
     } catch (e) {
-      setParametersError("Invalid JSON format: " + e.message);
+      setParametersError("Invalid JSON format: " + (e as Error).message);
     }
   };
   
@@ -81,7 +81,7 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
     }
   };
   
-  const testEmbeddingSearch = () => {
+  const testEmbeddingSearch = async () => {
     if (!testQuery.trim()) {
       toast.error("Por favor, insira uma consulta para testar");
       return;
@@ -93,8 +93,9 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
     }
     
     try {
-      // Busca contexto relevante
-      const context = embeddingService.getRelevantContext(testQuery);
+      setIsSearching(true);
+      // Busca contexto relevante usando await para lidar com a Promise
+      const context = await embeddingService.getRelevantContext(testQuery);
       
       if (!context) {
         setTestResults("Nenhum contexto relevante encontrado para a consulta.");
@@ -106,7 +107,9 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
     } catch (error) {
       console.error("Erro ao testar busca:", error);
       toast.error("Ocorreu um erro ao testar a busca de contexto");
-      setTestResults("Erro ao realizar busca: " + error.message);
+      setTestResults("Erro ao realizar busca: " + (error as Error).message);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -221,9 +224,10 @@ const FunctionForm: React.FC<FunctionFormProps> = ({
                 onClick={testEmbeddingSearch}
                 size="sm"
                 className="flex items-center gap-1"
+                disabled={isSearching}
               >
                 <Search className="h-4 w-4" />
-                Testar
+                {isSearching ? "Buscando..." : "Testar"}
               </Button>
             </div>
             

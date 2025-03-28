@@ -46,7 +46,7 @@ interface StreamCallbacks {
 }
 
 // Prepara mensagens para a API da OpenAI, agora usando o sistema RAG
-const prepareMessages = (options: OpenAICompletionOptions): OpenAIMessage[] => {
+const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
   let messages = [...options.messages];
   
   // Verifica se há uma pergunta do usuário para buscar contexto relevante
@@ -69,8 +69,16 @@ const prepareMessages = (options: OpenAICompletionOptions): OpenAIMessage[] => {
     if (lastUserMessage && embeddingService && embeddingService.isReady()) {
       console.log("Usando sistema RAG para buscar contexto relevante");
       // Obtém contexto relevante para a última mensagem do usuário
-      contextContent = embeddingService.getRelevantContext(lastUserMessage.content);
-      console.log(`Contexto relevante recuperado: ${contextContent.length} caracteres`);
+      try {
+        contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
+        console.log(`Contexto relevante recuperado: ${contextContent.length} caracteres`);
+      } catch (error) {
+        console.error("Erro ao obter contexto relevante:", error);
+        // Fallback em caso de erro - usar o método tradicional
+        contextContent = options.trainingFiles.map(file => {
+          return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
+        }).join("\n");
+      }
     } 
     // Fallback para o método antigo caso o RAG não esteja disponível
     else {
@@ -124,7 +132,7 @@ export const callOpenAI = async (options: OpenAICompletionOptions, apiKey: strin
     }
     
     // Prepara as mensagens para a API, incluindo o contexto relevante dos arquivos de treinamento
-    const messages = prepareMessages(options);
+    const messages = await prepareMessages(options);
     
     // Log do tamanho do contexto sendo enviado para a API
     const totalContextSize = messages.reduce((sum, msg) => sum + msg.content.length, 0);
@@ -275,7 +283,7 @@ export const streamOpenAI = async (
     }
     
     // Prepara as mensagens para a API
-    const messages = prepareMessages(options);
+    const messages = await prepareMessages(options);
     
     // Log do tamanho do contexto sendo enviado para a API
     const totalContextSize = messages.reduce((sum, msg) => sum + msg.content.length, 0);
