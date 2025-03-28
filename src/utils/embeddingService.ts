@@ -1,5 +1,5 @@
 
-import { createHash } from 'crypto';
+import CryptoJS from 'crypto-js';
 
 // Interface para chunks de texto com metadados
 export interface TextChunk {
@@ -37,7 +37,8 @@ export class EmbeddingService {
 
   // Gera um hash do texto para usar como chave de cache
   private generateHash(text: string): string {
-    return createHash('md5').update(text).digest('hex');
+    // Usando CryptoJS em vez do módulo crypto do Node
+    return CryptoJS.MD5(text).toString();
   }
 
   // Divide texto em chunks de tamanho adequado
