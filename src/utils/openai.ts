@@ -53,8 +53,8 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
   const userMessages = messages.filter(msg => msg.role === "user");
   const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
   
-  // Adiciona arquivos de treinamento como contexto se existirem e o serviço de embeddings estiver pronto
-  if (options.trainingFiles && options.trainingFiles.length > 0) {
+  // Utiliza RAG apenas se existirem arquivos de treinamento e o serviço estiver pronto
+  if (options.trainingFiles && options.trainingFiles.length > 0 && lastUserMessage) {
     // Indexa os arquivos no serviço de embeddings, se ainda não estiverem indexados
     options.trainingFiles.forEach(file => {
       // Apenas indexa se o serviço estiver disponível
@@ -63,45 +63,41 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
       }
     });
     
-    let contextContent = "";
-    
     // Usa o sistema RAG se houver uma mensagem do usuário e o serviço estiver pronto
-    if (lastUserMessage && embeddingService && embeddingService.isReady()) {
+    if (embeddingService && embeddingService.isReady()) {
       console.log("Usando sistema RAG para buscar contexto relevante");
+      
       // Obtém contexto relevante para a última mensagem do usuário
       try {
-        contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
+        const contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
         console.log(`Contexto relevante recuperado: ${contextContent.length} caracteres`);
+        
+        // Somente adiciona o contexto se algo relevante foi encontrado
+        if (contextContent && contextContent.length > 0) {
+          // Insere o conteúdo de treinamento após a mensagem do sistema
+          const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+          
+          if (systemMessageIndex !== -1) {
+            // Anexa à mensagem do sistema existente
+            messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
+          } else {
+            // Adiciona como uma nova mensagem do sistema se não existir nenhuma
+            messages.unshift({
+              role: "system",
+              content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
+            });
+          }
+          
+          console.log("Contexto relevante adicionado à conversa");
+        } else {
+          console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
+        }
       } catch (error) {
         console.error("Erro ao obter contexto relevante:", error);
-        // Fallback em caso de erro - usar o método tradicional
-        contextContent = options.trainingFiles.map(file => {
-          return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
-        }).join("\n");
+        // Não adiciona contexto em caso de erro
       }
-    } 
-    // Fallback para o método antigo caso o RAG não esteja disponível
-    else {
-      console.log("Sistema RAG não disponível, usando método tradicional");
-      // Cria uma mensagem de contexto com todo o conteúdo dos arquivos de treinamento
-      contextContent = options.trainingFiles.map(file => {
-        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
-      }).join("\n");
-    }
-    
-    // Insere o conteúdo de treinamento após a mensagem do sistema
-    if (contextContent) {
-      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-      if (systemMessageIndex !== -1) {
-        // Anexa à mensagem do sistema existente
-        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
-      } else {
-        // Adiciona como uma nova mensagem do sistema se não existir nenhuma
-        messages.unshift({
-          role: "system",
-          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
-        });
-      }
+    } else {
+      console.log("Sistema RAG não está pronto ou não há mensagem do usuário");
     }
   }
   

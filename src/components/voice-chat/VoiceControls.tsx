@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw } from "lucide-react";
+import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw, BookOpen } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,6 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { embeddingService } from "@/utils/embeddingService";
 
@@ -53,6 +55,7 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isRagEnabled, setIsRagEnabled] = useState(true);
 
   const VolumeIcon = volume === 0 
     ? VolumeX 
@@ -72,6 +75,18 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
         description: "Tente novamente ou contate o suporte."
       });
     }
+  };
+
+  const toggleRagSystem = (enabled: boolean) => {
+    setIsRagEnabled(enabled);
+    embeddingService.setEnabled(enabled);
+    toast.success(enabled 
+      ? "Sistema RAG ativado" 
+      : "Sistema RAG desativado", {
+      description: enabled 
+        ? "As informações da base de conhecimento serão usadas nas respostas" 
+        : "As respostas não usarão a base de conhecimento"
+    });
   };
 
   return (
@@ -160,7 +175,21 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
             </Button>
             
             {showAdvanced && (
-              <div className="space-y-2 mt-2">
+              <div className="space-y-4 mt-2">
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex items-center space-x-2">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="rag-toggle" className="text-sm text-muted-foreground">
+                      Sistema RAG
+                    </Label>
+                  </div>
+                  <Switch
+                    id="rag-toggle"
+                    checked={isRagEnabled}
+                    onCheckedChange={toggleRagSystem}
+                  />
+                </div>
+                
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Database className="h-3.5 w-3.5" />
@@ -186,6 +215,7 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
                   <div className="bg-muted/50 rounded p-2 text-xs text-muted-foreground">
                     <p>Status: {embeddingService.getStats().documentCount} documentos indexados</p>
                     <p>Chunks: {embeddingService.getStats().chunkCount} fragmentos</p>
+                    <p>RAG: {isRagEnabled ? "Ativado" : "Desativado"}</p>
                   </div>
                 )}
               </div>
