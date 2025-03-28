@@ -46,8 +46,18 @@ interface StreamCallbacks {
   onError: (error: Error) => void;
 }
 
+// Cache para embeddings
+const embeddingCache = new Map<string, number[]>();
+
 // Função para criar embeddings de texto usando o modelo da OpenAI
 export const createEmbedding = (text: string): number[] => {
+  // Verificar se já temos este texto no cache
+  const key = text.substring(0, 100) + '_' + text.length;
+  if (embeddingCache.has(key)) {
+    console.log(`Using cached embedding for text: ${text.substring(0, 50)}...`);
+    return embeddingCache.get(key)!;
+  }
+  
   // Implementação simples de hash para simular embeddings
   // Em um ambiente de produção, você deve chamar a API de embeddings da OpenAI
   const hash = CryptoJS.SHA256(text).toString();
@@ -59,6 +69,9 @@ export const createEmbedding = (text: string): number[] => {
     // Normalizar para um valor entre -1 e 1
     return (value / 65535) * 2 - 1;
   });
+  
+  // Armazenar no cache
+  embeddingCache.set(key, embedding);
   
   console.log(`Generated embedding for text: ${text.substring(0, 50)}...`);
   return embedding;
@@ -106,12 +119,12 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
         
         if (systemMessageIndex !== -1) {
           // Anexa à mensagem do sistema existente
-          messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
+          messages[systemMessageIndex].content += `\n\nUtilize as informações abaixo para responder à pergunta do usuário (apenas se for relevante):\n\n${contextContent}`;
         } else {
           // Adiciona como uma nova mensagem do sistema se não existir nenhuma
           messages.unshift({
             role: "system",
-            content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
+            content: `Use as seguintes informações para responder às perguntas do usuário (apenas se for relevante):\n\n${contextContent}`
           });
         }
         

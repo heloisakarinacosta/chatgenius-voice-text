@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from "@/hooks/use-toast"; // Changed from toast import
-import { embeddingService } from "@/utils/embeddingService"; // Added proper import
+import { useToast } from "@/hooks/use-toast";
+import RagSettings from "./RagSettings";
 
 interface VoiceSettingsProps {
   settings: {
@@ -25,113 +25,13 @@ interface VoiceSettingsProps {
   onCancel: () => void;
 }
 
-const RagSettings = () => {
-  const [ragEnabled, setRagEnabled] = useState<boolean>(true);
-  const [indexStats, setIndexStats] = useState<{
-    documentCount: number;
-    chunkCount: number;
-  } | null>(null);
-  const [isReindexing, setIsReindexing] = useState(false);
-  const { toast } = useToast(); // Get toast function from useToast hook
-  
-  useEffect(() => {
-    const ragEnabledValue = embeddingService.isEnabled();
-    setRagEnabled(ragEnabledValue);
-    
-    updateIndexStats();
-  }, []);
-  
-  const updateIndexStats = () => {
-    if (embeddingService.isReady()) {
-      setIndexStats(embeddingService.getStats());
-    }
-  };
-  
-  const handleRagToggle = (value: boolean) => {
-    embeddingService.setEnabled(value);
-    setRagEnabled(value);
-    toast({
-      title: `Sistema RAG ${value ? 'ativado' : 'desativado'}`
-    });
-  };
-  
-  const handleReindex = async () => {
-    try {
-      setIsReindexing(true);
-      toast({
-        title: "Reindexando documentos...",
-      });
-      await embeddingService.reindexAllDocuments();
-      updateIndexStats();
-      toast({
-        title: "Reindexação concluída com sucesso"
-      });
-    } catch (error) {
-      console.error("Erro ao reindexar documentos:", error);
-      toast({
-        title: "Erro ao reindexar documentos",
-        variant: "destructive"
-      });
-    } finally {
-      setIsReindexing(false);
-    }
-  };
-  
-  return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-md font-medium">Sistema RAG</h3>
-          <p className="text-sm text-muted-foreground">
-            Encontra contexto relevante nos documentos de treinamento
-          </p>
-        </div>
-        <Switch
-          checked={ragEnabled}
-          onCheckedChange={handleRagToggle}
-        />
-      </div>
-      
-      {ragEnabled && indexStats && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between bg-muted p-2 rounded-md">
-            <div className="text-sm">
-              <span className="font-medium">Documentos indexados:</span> {indexStats.documentCount}
-            </div>
-            <div className="text-sm">
-              <span className="font-medium">Fragmentos:</span> {indexStats.chunkCount}
-            </div>
-          </div>
-          
-          <Button 
-            size="sm" 
-            variant="outline" 
-            onClick={handleReindex}
-            disabled={isReindexing || !embeddingService.isReady()}
-            className="w-full"
-          >
-            {isReindexing ? (
-              <>
-                <span className="animate-spin mr-2">⟳</span>
-                Reindexando...
-              </>
-            ) : (
-              <>Reindexar documentos</>
-            )}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
   settings,
   onSave,
   onCancel
 }) => {
   const [formValues, setFormValues] = useState(settings);
-  const { toast } = useToast(); // Get toast function from useToast hook
+  const { toast } = useToast();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

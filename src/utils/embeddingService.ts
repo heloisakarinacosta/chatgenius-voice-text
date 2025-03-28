@@ -21,6 +21,8 @@ interface SearchResult {
   fileName: string;
   score: number;
   content: string;
+  chunkId?: string;
+  documentId?: string;
 }
 
 // Estado do serviço
@@ -29,6 +31,7 @@ let chunks: Chunk[] = [];
 let isInitialized = false;
 let debugMode = false;
 let ragEnabled = true; // Por padrão está habilitado
+let embeddingCache: Map<string, number[]> = new Map(); // Cache de embeddings
 
 // Configurações
 const CHUNK_SIZE = 1000;
@@ -37,6 +40,7 @@ const SIMILARITY_THRESHOLD = 0.75;
 const SIMILARITY_THRESHOLD_SHORT_QUERY = 0.6; // Limiar mais baixo para consultas curtas
 const MAX_RESULTS = 3;
 const SHORT_QUERY_LENGTH = 15; // Define o que é uma consulta curta
+const MAX_CONTEXT_LENGTH = 1500; // Limite máximo de contexto a ser enviado
 
 /**
  * Inicializa o serviço de embeddings
@@ -104,6 +108,14 @@ export const setDebug = (debug: boolean): void => {
 };
 
 /**
+ * Cria hash para o conteúdo para uso na cache de embeddings
+ */
+const createContentHash = (content: string): string => {
+  // Simplificado: apenas os primeiros 100 caracteres + comprimento
+  return content.substring(0, 100) + '_' + content.length;
+};
+
+/**
  * Adiciona um documento ao índice
  */
 export const addDocument = async (id: string, name: string, content: string): Promise<void> => {
@@ -151,9 +163,20 @@ export const addDocument = async (id: string, name: string, content: string): Pr
     // Adiciona os novos chunks
     for (const chunk of newChunks) {
       try {
-        // Gera embedding para o chunk
-        const embedding = await createEmbedding(chunk.content);
-        chunk.embedding = embedding;
+        // Verificar se já temos o embedding deste conteúdo em cache
+        const contentHash = createContentHash(chunk.content);
+        
+        if (embeddingCache.has(contentHash)) {
+          console.log(`Using cached embedding for chunk in document ${id}`);
+          chunk.embedding = embeddingCache.get(contentHash);
+        } else {
+          // Gera embedding para o chunk
+          const embedding = await createEmbedding(chunk.content);
+          chunk.embedding = embedding;
+          // Salva no cache
+          embeddingCache.set(contentHash, embedding);
+        }
+        
         chunks.push(chunk);
         
         // Adiciona referência ao chunk no documento
@@ -208,6 +231,9 @@ export const reindexAllDocuments = async (): Promise<void> => {
     // Limpa os arrays
     documents = [];
     chunks = [];
+    
+    // Limpa o cache de embeddings
+    embeddingCache.clear();
     
     // Reindexar cada documento
     for (const doc of currentDocuments) {
@@ -298,6 +324,52 @@ export const search = (query: string, maxResults: number = MAX_RESULTS): SearchR
 };
 
 /**
+ * Condensa o contexto para reduzir tokens enviados
+ */
+const condensarContexto = (context: string): string => {
+  if (context.length <= MAX_CONTEXT_LENGTH) return context;
+  
+  // Dividir em blocos
+  const blocks = context.split('### Trecho de');
+  
+  // Remover cabeçalhos redundantes
+  let condensedContext = '';
+  const processedSources = new Set<string>();
+  
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    
+    // Extrair fonte e conteúdo
+    const matchSource = block.match(/(.+?)\s*\(relevância:.*?\):/);
+    if (!matchSource) continue;
+    
+    const source = matchSource[1].trim();
+    
+    // Evitar duplicação de fontes
+    if (!processedSources.has(source)) {
+      processedSources.add(source);
+      
+      // Extrair apenas as informações mais relevantes de cada bloco
+      const contentMatch = block.match(/\):\s*\n\n([\s\S]+?)(\n\n|$)/);
+      let content = contentMatch ? contentMatch[1].trim() : '';
+      
+      if (content.length > 200) {
+        content = content.substring(0, 197) + '...';
+      }
+      
+      condensedContext += `### Informação de ${source}:\n\n${content}\n\n`;
+    }
+  }
+  
+  // Se ainda estiver muito longo, fazer um corte final
+  if (condensedContext.length > MAX_CONTEXT_LENGTH) {
+    condensedContext = condensedContext.substring(0, MAX_CONTEXT_LENGTH - 3) + '...';
+  }
+  
+  return condensedContext;
+};
+
+/**
  * Obtém contexto relevante para uma consulta
  */
 export const getRelevantContext = async (query: string): Promise<string> => {
@@ -316,11 +388,14 @@ export const getRelevantContext = async (query: string): Promise<string> => {
     }
     
     // Formata os resultados como contexto
-    const context = results.map(result => {
+    const rawContext = results.map(result => {
       return `### Trecho de ${result.fileName} (relevância: ${(result.score * 100).toFixed(1)}%):\n\n${result.content}\n\n`;
     }).join("\n");
     
-    console.log(`Contexto relevante recuperado: ${context.length} caracteres`);
+    // Condensar o contexto para reduzir o tamanho
+    const context = condensarContexto(rawContext);
+    
+    console.log(`Contexto relevante recuperado: ${context.length} caracteres (reduzido de ${rawContext.length})`);
     return context;
   } catch (error) {
     console.error("Error getting relevant context:", error);

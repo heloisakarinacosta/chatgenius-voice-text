@@ -32,6 +32,7 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     documentCount: number;
     chunkCount: number;
   } | null>(null);
+  const [reindexNeeded, setReindexNeeded] = useState(false);
 
   // Clear success message after 5 seconds
   useEffect(() => {
@@ -43,24 +44,41 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
     }
   }, [uploadSuccess]);
 
-  // Index all training files when component mounts or training files change
+  // Check if indexing is needed when component mounts
   useEffect(() => {
-    const indexAllFiles = async () => {
-      console.log(`Indexing ${trainingFiles.length} training files...`);
+    if (embeddingService.isReady()) {
+      const stats = embeddingService.getStats();
+      setIndexingStatus(stats);
       
-      for (const file of trainingFiles) {
-        embeddingService.addDocument(file.id, file.name, file.content);
+      // Check if indexing is needed
+      if (stats.documentCount < trainingFiles.length) {
+        setReindexNeeded(true);
       }
-      
-      updateIndexingStatus();
-    };
-    
-    indexAllFiles();
+    }
   }, [trainingFiles]);
 
   const updateIndexingStatus = () => {
     if (embeddingService.isReady()) {
       setIndexingStatus(embeddingService.getStats());
+    }
+  };
+
+  const handleReindexAll = async () => {
+    try {
+      toast.info("Reindexando todos os documentos...");
+      
+      // Index all training files
+      for (const file of trainingFiles) {
+        await embeddingService.addDocument(file.id, file.name, file.content);
+      }
+      
+      updateIndexingStatus();
+      setReindexNeeded(false);
+      
+      toast.success("Todos os documentos foram reindexados com sucesso");
+    } catch (error) {
+      console.error("Erro ao reindexar todos os documentos:", error);
+      toast.error("Erro ao reindexar documentos");
     }
   };
 
@@ -124,9 +142,17 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       const success = await addTrainingFile(trainingFile);
       
       if (success) {
-        // Adicione o arquivo ao índice de embeddings
-        embeddingService.addDocument(trainingFile.id, trainingFile.name, trainingFile.content);
-        updateIndexingStatus();
+        // Adicione o arquivo ao índice de embeddings em segundo plano
+        setTimeout(() => {
+          embeddingService.addDocument(trainingFile.id, trainingFile.name, trainingFile.content)
+            .then(() => {
+              updateIndexingStatus();
+              console.log(`Document ${trainingFile.id} indexed successfully`);
+            })
+            .catch(err => {
+              console.error(`Error indexing document ${trainingFile.id}:`, err);
+            });
+        }, 100);
         
         setUploadSuccess(`Arquivo "${file.name}" adicionado com sucesso`);
         toast.success(`Arquivo "${file.name}" adicionado com sucesso`);
@@ -174,9 +200,11 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
       console.log("Attempting to remove file:", id, name);
       const success = await removeTrainingFile(id);
       if (success) {
-        // Remova o arquivo do índice de embeddings
-        embeddingService.removeDocument(id);
-        updateIndexingStatus();
+        // Remova o arquivo do índice de embeddings em segundo plano
+        setTimeout(() => {
+          embeddingService.removeDocument(id);
+          updateIndexingStatus();
+        }, 100);
         
         toast.success(`Arquivo "${name}" removido com sucesso`);
       } else {
@@ -262,8 +290,21 @@ const TrainingFilesTab: React.FC<TrainingFilesTabProps> = ({
         {indexingStatus && (
           <div className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 p-3 rounded-md mt-2 text-sm flex items-start gap-2">
             <Database className="h-5 w-5 flex-shrink-0 mt-0.5" />
-            <div>
-              <p><strong>Índice de conhecimento:</strong> {indexingStatus.documentCount} documentos processados em {indexingStatus.chunkCount} fragmentos</p>
+            <div className="flex-1">
+              <div className="flex justify-between items-center">
+                <p><strong>Índice de conhecimento:</strong> {indexingStatus.documentCount} docs / {indexingStatus.chunkCount} fragmentos</p>
+                
+                {reindexNeeded && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="ml-2 text-xs"
+                    onClick={handleReindexAll}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" /> Reindexar
+                  </Button>
+                )}
+              </div>
               <p className="text-xs mt-1">Usando RAG para recuperação de informação eficiente</p>
             </div>
           </div>
