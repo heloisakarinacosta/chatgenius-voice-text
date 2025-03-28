@@ -1,537 +1,174 @@
 
-export interface OpenAIMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content: string | null;
-  tool_calls?: Array<{
-    id: string;
-    type: string;
-    function: {
-      name: string;
-      arguments: string;
-    }
-  }>;
-  tool_call_id?: string;
+import CryptoJS from 'crypto-js';
+import { embeddingService } from './embeddingService';
+
+// Interface para mensagem da OpenAI
+interface OpenAIMessage {
+  role: "system" | "user" | "assistant" | "function";
+  content: string;
+  name?: string;
 }
 
-export interface OpenAIFunction {
+// Interface para opções de conclusão da OpenAI
+interface OpenAICompletionOptions {
+  messages: OpenAIMessage[];
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  trainingFiles?: Array<{
+    id: string;
+    name: string;
+    content: string;
+    size?: number;
+    type?: string;
+    timestamp?: Date;
+  }>;
+  functions?: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, any>;
+  }>;
+  detectEmotion?: boolean;
+}
+
+// Interface para função de conclusão da OpenAI
+interface OpenAIFunction {
   name: string;
   description: string;
   parameters: Record<string, any>;
 }
 
-export interface OpenAICompletionOptions {
-  messages: OpenAIMessage[];
-  model?: string;
-  temperature?: number;
-  functions?: OpenAIFunction[];
-  stream?: boolean;
-  trainingFiles?: Array<{
-    id: string;
-    name: string;
-    content: string;
-    size: number;
-    type: string;
-    timestamp: Date;
-  }>;
-  max_tokens?: number;
-  detectEmotion?: boolean;
-}
-
-export interface StreamCallbacks {
-  onMessage?: (message: string) => void;
-  onComplete?: (fullMessage: string) => void;
-  onError?: (error: any) => void;
-  onFunctionCall?: (functionName: string, parameters: any) => Promise<string>;
-}
-
+// Prepara mensagens para a API da OpenAI, agora usando o sistema RAG
 const prepareMessages = (options: OpenAICompletionOptions): OpenAIMessage[] => {
   let messages = [...options.messages];
   
-  // Add training files as context if they exist
+  // Verifica se há uma pergunta do usuário para buscar contexto relevante
+  const userMessages = messages.filter(msg => msg.role === "user");
+  const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
+  
+  // Adiciona arquivos de treinamento como contexto se existirem e o serviço de embeddings estiver pronto
   if (options.trainingFiles && options.trainingFiles.length > 0) {
-    // Create a context message with all training files content
-    const trainingContent = options.trainingFiles.map(file => {
-      return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
-    }).join("\n");
+    // Indexa os arquivos no serviço de embeddings, se ainda não estiverem indexados
+    options.trainingFiles.forEach(file => {
+      // Apenas indexa se o serviço estiver disponível
+      if (embeddingService && typeof embeddingService.addDocument === 'function') {
+        embeddingService.addDocument(file.id, file.name, file.content);
+      }
+    });
     
-    // Insert the training content after the system message
-    const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-    if (systemMessageIndex !== -1) {
-      // Append to existing system message
-      messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${trainingContent}`;
+    let contextContent = "";
+    
+    // Usa o sistema RAG se houver uma mensagem do usuário e o serviço estiver pronto
+    if (lastUserMessage && embeddingService && embeddingService.isReady()) {
+      console.log("Usando sistema RAG para buscar contexto relevante");
+      // Obtém contexto relevante para a última mensagem do usuário
+      contextContent = embeddingService.getRelevantContext(lastUserMessage.content);
+      console.log(`Contexto relevante recuperado: ${contextContent.length} caracteres`);
+    } 
+    // Fallback para o método antigo caso o RAG não esteja disponível
+    else {
+      console.log("Sistema RAG não disponível, usando método tradicional");
+      // Cria uma mensagem de contexto com todo o conteúdo dos arquivos de treinamento
+      contextContent = options.trainingFiles.map(file => {
+        return `### Conteúdo do arquivo: ${file.name}\n\n${file.content}\n\n`;
+      }).join("\n");
+    }
+    
+    // Insere o conteúdo de treinamento após a mensagem do sistema
+    if (contextContent) {
+      const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+      if (systemMessageIndex !== -1) {
+        // Anexa à mensagem do sistema existente
+        messages[systemMessageIndex].content += `\n\nEu fornecerei algumas informações adicionais que você deve usar para responder às perguntas do usuário:\n\n${contextContent}`;
+      } else {
+        // Adiciona como uma nova mensagem do sistema se não existir nenhuma
+        messages.unshift({
+          role: "system",
+          content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${contextContent}`
+        });
+      }
+    }
+  }
+  
+  // Adiciona instruções de detecção de emoção se solicitado
+  if (options.detectEmotion) {
+    const lastSystemMessageIndex = messages.findIndex(msg => msg.role === "system");
+    
+    if (lastSystemMessageIndex !== -1) {
+      messages[lastSystemMessageIndex].content += "\n\nDetecte o sentimento emocional principal na mensagem do usuário e inclua essa informação no início da sua resposta entre colchetes, por exemplo: [Sentimento: Feliz]. Os possíveis sentimentos são: Feliz, Triste, Irritado, Confuso, Neutro, Preocupado, Satisfeito.";
     } else {
-      // Add as a new system message if no system message exists
       messages.unshift({
         role: "system",
-        content: `Use as seguintes informações para responder às perguntas do usuário:\n\n${trainingContent}`
+        content: "Detecte o sentimento emocional principal na mensagem do usuário e inclua essa informação no início da sua resposta entre colchetes, por exemplo: [Sentimento: Feliz]. Os possíveis sentimentos são: Feliz, Triste, Irritado, Confuso, Neutro, Preocupado, Satisfeito."
       });
     }
   }
-
-  // Add emotion detection directive if enabled
-  if (options.detectEmotion) {
-    // Find the last user message using a traditional approach instead of findLast
-    let lastUserMessage = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserMessage = messages[i];
-        break;
-      }
-    }
-    
-    if (lastUserMessage) {
-      messages = [
-        ...messages,
-        {
-          role: "system",
-          content: "Por favor, antes de responder, avalie o tom emocional da mensagem do usuário e adapte sua resposta de acordo com essa emoção."
-        }
-      ];
-    }
-  }
-
+  
   return messages;
 };
 
-export async function callOpenAI(
-  options: OpenAICompletionOptions, 
-  apiKey: string, 
-  functionCallbacks?: Record<string, (params: any) => Promise<string>>
-): Promise<string> {
-  if (!apiKey) {
-    throw new Error("API_KEY_MISSING");
-  }
-
+// Chama a API da OpenAI
+export const callOpenAI = async (options: OpenAICompletionOptions, apiKey: string): Promise<string> => {
   try {
-    // Prepare messages with training files and emotion detection
-    let messages = prepareMessages(options);
-
-    const requestBody: any = {
-      model: options.model || "gpt-4o-mini",
-      messages: messages,
-      temperature: options.temperature || 0.7,
-      stream: options.stream || false,
-      max_tokens: options.max_tokens || 1024,
-    };
-
-    // Only include functions if they exist and are not empty
-    if (options.functions && options.functions.length > 0) {
-      requestBody.tools = options.functions.map(func => ({
-        type: "function",
-        function: {
-          name: func.name,
-          description: func.description,
-          parameters: func.parameters
-        }
-      }));
-      requestBody.tool_choice = "auto";
+    console.log("Chamando API OpenAI com modelo:", options.model);
+    
+    if (!apiKey) {
+      throw new Error("API key não fornecida");
     }
-
-    console.log("Enviando requisição para OpenAI API:", {
-      ...requestBody,
-      messages: `${requestBody.messages.length} mensagens`,
-      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0,
-      detectEmotion: options.detectEmotion
-    });
-
+    
+    // Prepara as mensagens para a API, incluindo o contexto relevante dos arquivos de treinamento
+    const messages = prepareMessages(options);
+    
+    // Log do tamanho do contexto sendo enviado para a API
+    const totalContextSize = messages.reduce((sum, msg) => sum + msg.content.length, 0);
+    console.log(`Enviando contexto para OpenAI: ${totalContextSize} caracteres`);
+    
+    // Estabelece os parâmetros padrão
+    const model = options.model || "gpt-3.5-turbo";
+    const temperature = options.temperature !== undefined ? options.temperature : 0.7;
+    const max_tokens = options.maxTokens || 1000;
+    
+    // Constrói o corpo da solicitação
+    const requestBody: Record<string, any> = {
+      model,
+      messages,
+      temperature,
+      max_tokens,
+    };
+    
+    // Adiciona funções se fornecidas
+    if (options.functions && options.functions.length > 0) {
+      requestBody.functions = options.functions;
+      requestBody.function_call = "auto";
+    }
+    
+    // Faz a chamada para a API da OpenAI
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${apiKey}`
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(requestBody)
     });
-
+    
+    // Verifica se a resposta foi bem-sucedida
     if (!response.ok) {
-      const error = await response.json();
-      console.error("Erro na resposta da OpenAI API:", error);
-      
-      if (response.status === 429) {
-        throw new Error("API_QUOTA_EXCEEDED");
-      } else if (response.status === 401) {
-        throw new Error("API_KEY_INVALID");
-      } else {
-        throw new Error(error.error?.message || "Failed to call OpenAI API");
-      }
+      const errorData = await response.json().catch(() => null);
+      console.error("Erro na API OpenAI:", errorData);
+      throw new Error(`Erro na API OpenAI: ${response.status} - ${response.statusText}`);
     }
-
+    
+    // Processa a resposta
     const data = await response.json();
     
-    // Handle function call if present
-    if (data.choices[0].message.tool_calls && data.choices[0].message.tool_calls.length > 0 && functionCallbacks) {
-      const toolCall = data.choices[0].message.tool_calls[0];
-      const functionName = toolCall.function.name;
-      const parameters = JSON.parse(toolCall.function.arguments);
-      
-      if (functionCallbacks[functionName]) {
-        // Execute the function
-        const functionResult = await functionCallbacks[functionName](parameters);
-        
-        // Add function result to messages and call the API again
-        const updatedMessages: OpenAIMessage[] = [
-          ...messages,
-          {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              {
-                id: toolCall.id,
-                type: "function",
-                function: {
-                  name: functionName,
-                  arguments: toolCall.function.arguments
-                }
-              }
-            ]
-          },
-          {
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: functionResult
-          }
-        ];
-        
-        // Call API again with the function result
-        const updatedOptions = {
-          ...options,
-          messages: updatedMessages
-        };
-        
-        return callOpenAI(updatedOptions, apiKey, functionCallbacks);
-      }
-      
-      return `A função ${functionName} foi chamada com os parâmetros: ${JSON.stringify(parameters)}, mas nenhum manipulador foi fornecido.`;
-    }
+    // Extrai o conteúdo da resposta
+    const content = data.choices[0].message.content || "";
     
-    return data.choices[0].message.content;
+    console.log("Resposta recebida da OpenAI com sucesso");
+    return content;
   } catch (error) {
-    console.error("Erro ao chamar OpenAI:", error);
+    console.error("Erro ao chamar a API OpenAI:", error);
     throw error;
   }
-}
-
-export async function streamOpenAI(
-  options: OpenAICompletionOptions,
-  apiKey: string,
-  callbacks: StreamCallbacks
-): Promise<void> {
-  if (!apiKey) {
-    callbacks.onError?.(new Error("API_KEY_MISSING"));
-    return;
-  }
-
-  try {
-    // Prepare messages with training files and emotion detection
-    let messages = prepareMessages(options);
-
-    const requestBody: any = {
-      model: options.model || "gpt-4o-mini",
-      messages: messages,
-      temperature: options.temperature || 0.7,
-      stream: true,
-      max_tokens: options.max_tokens || 1024,
-    };
-
-    // Only include functions if they exist and are not empty
-    if (options.functions && options.functions.length > 0) {
-      requestBody.tools = options.functions.map(func => ({
-        type: "function",
-        function: {
-          name: func.name,
-          description: func.description,
-          parameters: func.parameters
-        }
-      }));
-      requestBody.tool_choice = "auto";
-    }
-
-    console.log("Enviando streaming para OpenAI API:", {
-      ...requestBody,
-      messages: `${requestBody.messages.length} mensagens`,
-      hasTrainingFiles: options.trainingFiles && options.trainingFiles.length > 0,
-      detectEmotion: options.detectEmotion
-    });
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Erro na resposta de streaming (${response.status}): ${errorText}`);
-      
-      let errorJson;
-      try {
-        errorJson = JSON.parse(errorText);
-      } catch (e) {
-        // Se não for JSON, apenas continua
-        console.log("Resposta de erro não é JSON válido");
-      }
-      
-      if (response.status === 429) {
-        throw new Error("API_QUOTA_EXCEEDED");
-      } else if (response.status === 401) {
-        throw new Error("API_KEY_INVALID");
-      } else {
-        throw new Error(errorJson?.error?.message || `Error ${response.status}: ${response.statusText}`);
-      }
-    }
-
-    if (!response.body) {
-      throw new Error("Response body is null");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let fullMessage = "";
-    let buffer = "";
-    let isFunctionCall = false;
-    let functionName = "";
-    let functionArguments = "";
-    let toolCallId = "";
-    let receivedContent = false; // Flag para verificar se recebemos algum conteúdo
-
-    console.log("Iniciando leitura do stream");
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        console.log("Stream concluído");
-        break;
-      }
-
-      const chunk = decoder.decode(value);
-      buffer += chunk;
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.substring(6);
-          
-          if (data === "[DONE]") {
-            console.log("Recebido [DONE] no stream");
-            
-            // Handle function call if we collected one
-            if (isFunctionCall && callbacks.onFunctionCall) {
-              try {
-                const parameters = JSON.parse(functionArguments);
-                const result = await callbacks.onFunctionCall(functionName, parameters);
-                
-                // Call API again with function result
-                const updatedMessages: OpenAIMessage[] = [
-                  ...messages,
-                  {
-                    role: "assistant",
-                    content: null,
-                    tool_calls: [
-                      {
-                        id: toolCallId,
-                        type: "function",
-                        function: {
-                          name: functionName,
-                          arguments: functionArguments
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    role: "tool",
-                    tool_call_id: toolCallId,
-                    content: result
-                  }
-                ];
-                
-                // Reset streaming with new messages including function result
-                const updatedOptions = {
-                  ...options,
-                  messages: updatedMessages
-                };
-                
-                await streamOpenAI(updatedOptions, apiKey, callbacks);
-              } catch (error) {
-                console.error("Erro ao executar função:", error);
-                callbacks.onError?.(error);
-              }
-            } else {
-              // Se não recebemos nenhum conteúdo mas chegamos ao [DONE], envie uma mensagem de fallback
-              if (!receivedContent && fullMessage.trim() === "") {
-                console.warn("Stream concluído sem conteúdo recebido");
-                const fallbackMessage = "Desculpe, não consegui gerar uma resposta. Por favor, tente novamente.";
-                fullMessage = fallbackMessage;
-                callbacks.onMessage?.(fallbackMessage);
-              }
-              
-              if (callbacks.onComplete) {
-                callbacks.onComplete(fullMessage);
-              }
-            }
-            continue;
-          }
-          
-          try {
-            const json = JSON.parse(data);
-            
-            // Check for function call
-            if (json.choices && json.choices[0].delta && json.choices[0].delta.tool_calls) {
-              const toolCall = json.choices[0].delta.tool_calls[0];
-              
-              if (toolCall.index === 0) {
-                isFunctionCall = true;
-                toolCallId = toolCall.id || ""; // Store tool call ID
-              }
-              
-              if (toolCall.function) {
-                if (toolCall.function.name) {
-                  functionName = toolCall.function.name;
-                }
-                
-                if (toolCall.function.arguments) {
-                  functionArguments += toolCall.function.arguments;
-                }
-              }
-            } 
-            // Regular content
-            else if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
-              const content = json.choices[0].delta.content;
-              if (content && content.trim() !== "") {
-                receivedContent = true;
-                fullMessage += content;
-                callbacks.onMessage?.(content);
-                console.log("Recebido chunk de conteúdo:", content);
-              }
-            } else if (json.choices && json.choices[0].delta && Object.keys(json.choices[0].delta).length === 0) {
-              // Este é o primeiro chunk (geralmente vazio)
-              console.log("Primeiro chunk recebido (vazio)");
-            } else {
-              console.log("Chunk recebido sem conteúdo:", json);
-            }
-          } catch (e) {
-            console.error("Erro ao parsear JSON do stream:", e, "Line:", line);
-          }
-        }
-      }
-    }
-
-    // Se não houve conteúdo mas o stream terminou, vamos enviar uma mensagem padrão
-    if (!receivedContent && fullMessage.trim() === "") {
-      console.warn("Nenhum conteúdo recebido após término do stream");
-      const fallbackMessage = "Desculpe, não consegui gerar uma resposta. Por favor, tente novamente.";
-      fullMessage = fallbackMessage;
-      callbacks.onMessage?.(fallbackMessage);
-    }
-
-    // Make sure to complete if we reach here and haven't called onComplete yet
-    if (!isFunctionCall && callbacks.onComplete) {
-      callbacks.onComplete(fullMessage);
-    }
-  } catch (error) {
-    console.error("Erro ao fazer streaming da OpenAI:", error);
-    callbacks.onError?.(error);
-  }
-}
-
-export async function generateSpeech(
-  text: string, 
-  voiceId: string, 
-  apiKey: string
-): Promise<ArrayBuffer> {
-  console.log(`Generating speech for text: ${text.substring(0, 50)}...`);
-  console.log(`Using voice ID: ${voiceId}`);
-  
-  try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "tts-1",
-        input: text,
-        voice: voiceId,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`Speech generation error: ${response.status} ${response.statusText}`);
-      const errorBody = await response.text();
-      console.error(`Error response: ${errorBody}`);
-      
-      let errorMessage = "Failed to generate speech";
-      try {
-        const errorJson = JSON.parse(errorBody);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch (e) {
-        // If parsing fails, use the default message
-      }
-      
-      throw new Error(errorMessage);
-    }
-
-    console.log("Speech generated successfully");
-    return await response.arrayBuffer();
-  } catch (error) {
-    console.error("Error generating speech:", error);
-    throw error;
-  }
-}
-
-export async function transcribeAudio(
-  audioBlob: Blob,
-  apiKey: string
-): Promise<string> {
-  try {
-    const formData = new FormData();
-    formData.append("file", audioBlob, "audio.webm");
-    formData.append("model", "whisper-1");
-    
-    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || "Failed to transcribe audio");
-    }
-
-    const data = await response.json();
-    return data.text;
-  } catch (error) {
-    console.error("Error transcribing audio:", error);
-    throw error;
-  }
-}
-
-export async function callWebhook(url: string, params: any): Promise<string> {
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    return JSON.stringify(result);
-  } catch (error) {
-    console.error('Error calling webhook:', error);
-    return JSON.stringify({ error: 'Failed to call webhook', message: error.message });
-  }
-}
+};
