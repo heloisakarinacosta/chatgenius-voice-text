@@ -48,6 +48,10 @@ interface StreamCallbacks {
 // Cache para embeddings
 const embeddingCache = new Map<string, number[]>();
 
+// Cache para consultas recentes para evitar duplicações
+const recentQueriesCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 20;
+
 // Função para criar embeddings de texto usando o modelo da OpenAI
 export const createEmbedding = (text: string): number[] => {
   // Verificar se já temos este texto no cache
@@ -76,7 +80,24 @@ export const createEmbedding = (text: string): number[] => {
   return embedding;
 };
 
-// Prepara mensagens para a API da OpenAI, agora usando o sistema RAG otimizado
+// Função para verificar se uma consulta é semanticamente similar a uma recente
+const isQuerySimilarToRecent = (query: string, queryHash: string): boolean => {
+  if (recentQueriesCache.has(queryHash)) {
+    return true;
+  }
+  
+  // Adicionar a consulta ao cache
+  if (recentQueriesCache.size >= MAX_CACHE_SIZE) {
+    // Remover a entrada mais antiga
+    const oldestKey = recentQueriesCache.keys().next().value;
+    recentQueriesCache.delete(oldestKey);
+  }
+  
+  recentQueriesCache.set(queryHash, query);
+  return false;
+};
+
+// Prepara mensagens para a API da OpenAI, usando o sistema RAG otimizado
 const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
   let messages = [...options.messages];
   
@@ -91,49 +112,58 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
   
   // Utiliza RAG apenas se o sistema estiver habilitado e houver uma mensagem do usuário
   if (embeddingService.isEnabled() && lastUserMessage && lastUserMessage.content.trim()) {
-    // Indexa arquivos apenas se eles não estiverem indexados
-    if (options.trainingFiles && options.trainingFiles.length > 0) {
-      // Verifica se os documentos já estão indexados
-      const stats = embeddingService.getStats();
-      if (stats.documentCount < options.trainingFiles.length) {
-        console.log(`Indexing ${options.trainingFiles.length} training files...`);
-        
-        for (const file of options.trainingFiles) {
-          embeddingService.addDocument(file.id, file.name, file.content);
-        }
-      }
-    }
+    // Evita processamento duplicado verificando se a consulta é similar a uma recente
+    const userMessageHash = CryptoJS.SHA256(lastUserMessage.content).toString();
+    const isDuplicate = isQuerySimilarToRecent(lastUserMessage.content, userMessageHash);
     
-    // Usa o sistema RAG para obter contexto relevante
-    try {
-      console.log("Usando sistema RAG para buscar contexto relevante");
-      
-      // Obtém contexto relevante para a última mensagem do usuário
-      const contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
-      
-      // Somente adiciona o contexto se algo relevante foi encontrado
-      if (contextContent && contextContent.length > 0) {
-        // Insere o conteúdo de treinamento após a mensagem do sistema
-        const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
-        
-        if (systemMessageIndex !== -1) {
-          // Anexa à mensagem do sistema existente
-          messages[systemMessageIndex].content += `\n\nUtilize as informações abaixo para responder à pergunta do usuário (apenas se for relevante):\n\n${contextContent}`;
-        } else {
-          // Adiciona como uma nova mensagem do sistema se não existir nenhuma
-          messages.unshift({
-            role: "system",
-            content: `Use as seguintes informações para responder às perguntas do usuário (apenas se for relevante):\n\n${contextContent}`
-          });
+    // Se não for duplicada, processa normalmente
+    if (!isDuplicate) {
+      // Indexa arquivos apenas se eles não estiverem indexados
+      if (options.trainingFiles && options.trainingFiles.length > 0) {
+        // Verifica se os documentos já estão indexados
+        const stats = embeddingService.getStats();
+        if (stats.documentCount < options.trainingFiles.length) {
+          console.log(`Indexing ${options.trainingFiles.length} training files...`);
+          
+          for (const file of options.trainingFiles) {
+            embeddingService.addDocument(file.id, file.name, file.content);
+          }
         }
-        
-        console.log("Contexto relevante adicionado à conversa");
-      } else {
-        console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
       }
-    } catch (error) {
-      console.error("Erro ao obter contexto relevante:", error);
-      // Não adiciona contexto em caso de erro
+      
+      // Usa o sistema RAG para obter contexto relevante
+      try {
+        console.log("Usando sistema RAG para buscar contexto relevante");
+        
+        // Obtém contexto relevante para a última mensagem do usuário
+        const contextContent = await embeddingService.getRelevantContext(lastUserMessage.content);
+        
+        // Somente adiciona o contexto se algo relevante foi encontrado
+        if (contextContent && contextContent.length > 0) {
+          // Insere o conteúdo de treinamento após a mensagem do sistema
+          const systemMessageIndex = messages.findIndex(msg => msg.role === "system");
+          
+          if (systemMessageIndex !== -1) {
+            // Anexa à mensagem do sistema existente
+            messages[systemMessageIndex].content += `\n\nUtilize as informações abaixo para responder à pergunta do usuário (apenas se for relevante):\n\n${contextContent}`;
+          } else {
+            // Adiciona como uma nova mensagem do sistema se não existir nenhuma
+            messages.unshift({
+              role: "system",
+              content: `Use as seguintes informações para responder às perguntas do usuário (apenas se for relevante):\n\n${contextContent}`
+            });
+          }
+          
+          console.log("Contexto relevante adicionado à conversa");
+        } else {
+          console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
+        }
+      } catch (error) {
+        console.error("Erro ao obter contexto relevante:", error);
+        // Não adiciona contexto em caso de erro
+      }
+    } else {
+      console.log("Consulta similar recente detectada, reutilizando contexto");
     }
   } else {
     if (!embeddingService.isEnabled()) {
@@ -161,7 +191,30 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
     }
   }
   
-  return messages;
+  // Limpa mensagens duplicadas consecutivas
+  let cleanedMessages: OpenAIMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    // Adiciona a primeira mensagem
+    if (i === 0) {
+      cleanedMessages.push(messages[i]);
+      continue;
+    }
+    
+    // Verifica se a mensagem atual é uma duplicação da anterior E tem o mesmo role
+    const currentMsg = messages[i];
+    const prevMsg = messages[i-1];
+    
+    // Só considera duplicada se tiver o mesmo papel e conteúdo similar
+    if (currentMsg.role === prevMsg.role && 
+        currentMsg.content.trim().toLowerCase() === prevMsg.content.trim().toLowerCase()) {
+      console.log("Mensagem duplicada detectada no histórico, ignorando");
+      continue;
+    }
+    
+    cleanedMessages.push(currentMsg);
+  }
+  
+  return cleanedMessages;
 };
 
 // Chama a API da OpenAI
@@ -230,7 +283,6 @@ export const callOpenAI = async (options: OpenAICompletionOptions, apiKey: strin
   }
 };
 
-// Transcrição de áudio usando a API Whisper da OpenAI
 export const transcribeAudio = async (audioBlob: Blob, apiKey: string): Promise<string> => {
   try {
     console.log("Enviando áudio para transcrição via API Whisper");
@@ -267,7 +319,6 @@ export const transcribeAudio = async (audioBlob: Blob, apiKey: string): Promise<
   }
 };
 
-// Geração de fala usando a API TTS da OpenAI
 export const generateSpeech = async (
   text: string, 
   voiceId: string = 'alloy', 
@@ -311,7 +362,6 @@ export const generateSpeech = async (
   }
 };
 
-// Versão de streaming para a API da OpenAI
 export const streamOpenAI = async (
   options: OpenAICompletionOptions, 
   apiKey: string,

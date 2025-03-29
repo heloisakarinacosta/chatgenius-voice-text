@@ -42,7 +42,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [errorSending, setErrorSending] = useState(false);
   const [processingMessage, setProcessingMessage] = useState(false);
-  const [messageBeingSent, setMessageBeingSent] = useState<string | null>(null);
+  const [lastSentMessage, setLastSentMessage] = useState<string | null>(null);
+  const [lastReceivedResponse, setLastReceivedResponse] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -94,10 +95,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
   };
   
+  const isDuplicateUserMessage = (message: string): boolean => {
+    return message.trim().toLowerCase() === lastSentMessage?.trim().toLowerCase();
+  };
+  
   const handleSendMessage = async () => {
     const message = inputValue.trim();
     
-    if (!message || isLoading || processingMessage || message === messageBeingSent) {
+    if (!message || isLoading || processingMessage) {
       return;
     }
     
@@ -108,10 +113,16 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       return;
     }
     
+    if (isDuplicateUserMessage(message)) {
+      console.log("Mensagem duplicada detectada, ignorando:", message);
+      setInputValue("");
+      return;
+    }
+    
     setIsLoading(true);
     setProcessingMessage(true);
     setErrorSending(false);
-    setMessageBeingSent(message);
+    setLastSentMessage(message);
     setInputValue("");
     
     try {
@@ -153,7 +164,6 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     } finally {
       setIsLoading(false);
       setProcessingMessage(false);
-      setMessageBeingSent(null);
     }
   };
   
@@ -183,9 +193,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         detectEmotion: agentConfig?.detectEmotion || false
       }, apiKey);
       
-      updateMessage(tempAssistantId, response);
-      
-      console.log("Received response from OpenAI:", response.substring(0, 50) + "...");
+      if (response === lastReceivedResponse) {
+        console.log("Resposta duplicada detectada, não atualizando UI");
+        const filteredMessages = messages.filter(msg => msg.id !== tempAssistantId);
+      } else {
+        updateMessage(tempAssistantId, response);
+        setLastReceivedResponse(response);
+        console.log("Received response from OpenAI:", response.substring(0, 50) + "...");
+      }
     } catch (error) {
       console.error("Error getting assistant response:", error);
       toast.error("Erro ao obter resposta do assistente", {
@@ -202,6 +217,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       if (newId) {
         toast.success("Nova conversa iniciada");
         console.log("New conversation started with ID:", newId);
+        setLastSentMessage(null);
+        setLastReceivedResponse(null);
       } else {
         toast.error("Erro ao iniciar nova conversa");
         console.error("No ID returned when starting new conversation");
@@ -274,107 +291,132 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   
   return (
     <div className={`fixed z-50 ${positionClasses}`}>
-      <div className="bg-background rounded-lg shadow-lg overflow-hidden flex flex-col w-80 sm:w-96 transition-all duration-300 max-h-[85vh] transform animate-in fade-in slide-in-from-bottom-8">
-        <div 
-          className="p-4 flex justify-between items-center text-white cursor-pointer"
+      {!isWidgetOpen ? (
+        <button
+          onClick={toggleWidget}
+          className="w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-110"
           style={colorStyles}
-          onClick={toggleMinimize}
         >
-          <div>
-            <h3 className="font-medium">{widgetConfig?.title || "Assistente de Chat"}</h3>
-            <p className="text-sm opacity-90">{widgetConfig?.subtitle || "Como posso ajudar você hoje?"}</p>
-          </div>
-          <div className="flex items-center space-x-2">
-            {isMinimized ? (
-              <Maximize2 className="h-4 w-4" onClick={toggleMinimize} />
-            ) : (
-              <Minimize2 className="h-4 w-4" onClick={toggleMinimize} />
-            )}
-            <X className="h-5 w-5" onClick={toggleWidget} />
-          </div>
-        </div>
-        
-        <div className={`flex-1 flex flex-col ${isMinimized ? 'hidden' : ''}`}>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[50vh]">
-            {messages.length === 0 ? (
-              <div className="h-full flex items-center justify-center">
-                <p className="text-muted-foreground text-sm text-center">
-                  Inicie uma conversa digitando uma mensagem ou usando o chat por voz.
-                </p>
-              </div>
-            ) : (
-              messages.map((message) => (
-                <ChatBubble key={message.id} message={message} />
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-          
-          {isVoiceChatActive && (
-            <div className="px-4 py-3 border-t">
-              <VoiceChatAgent apiKey={apiKey || ""} />
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="text-white"
+          >
+            <path
+              d="M21 11.5C21 16.1944 16.9706 20 12 20C11.3696 20 10.7311 19.9449 10.1092 19.8373L6.5 21.9616V18.5164C4.4342 17.2504 3 14.7663 3 12C3 7.30554 7.02944 3.5 12 3.5C16.9706 3.5 21 7.30554 21 11.5Z"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : (
+        <div className="bg-background rounded-lg shadow-lg overflow-hidden flex flex-col w-80 sm:w-96 transition-all duration-300 max-h-[85vh] transform animate-in fade-in slide-in-from-bottom-8">
+          <div 
+            className="p-4 flex justify-between items-center text-white cursor-pointer"
+            style={colorStyles}
+            onClick={toggleMinimize}
+          >
+            <div>
+              <h3 className="font-medium">{widgetConfig?.title || "Assistente de Chat"}</h3>
+              <p className="text-sm opacity-90">{widgetConfig?.subtitle || "Como posso ajudar você hoje?"}</p>
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              {isMinimized ? (
+                <Maximize2 className="h-4 w-4" onClick={toggleMinimize} />
+              ) : (
+                <Minimize2 className="h-4 w-4" onClick={toggleMinimize} />
+              )}
+              <X className="h-5 w-5" onClick={toggleWidget} />
+            </div>
+          </div>
           
-          <div className="p-4 border-t bg-muted/30">
-            <div className="flex space-x-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                className={`rounded-full p-2 ${isVoiceChatActive ? 'bg-primary/10 text-primary' : ''}`}
-                onClick={toggleVoiceChat}
-                title={isVoiceChatActive ? "Desativar chat por voz" : "Ativar chat por voz"}
-                disabled={isLoading || processingMessage}
-              >
-                <Mic className="h-5 w-5" />
-              </Button>
-              
-              <Input
-                ref={inputRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Digite sua mensagem..."
-                className="flex-1"
-                disabled={isLoading || processingMessage}
-              />
-              
-              <Button
-                size="sm"
-                variant="default"
-                className="rounded-full p-2"
-                onClick={handleSendMessage}
-                disabled={isLoading || processingMessage || inputValue.trim() === "" || inputValue === messageBeingSent}
-              >
-                {isLoading || processingMessage ? (
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Send className="h-5 w-5" />
-                )}
-              </Button>
+          <div className={`flex-1 flex flex-col ${isMinimized ? 'hidden' : ''}`}>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[50vh]">
+              {messages.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-muted-foreground text-sm text-center">
+                    Inicie uma conversa digitando uma mensagem ou usando o chat por voz.
+                  </p>
+                </div>
+              ) : (
+                messages.map((message) => (
+                  <ChatBubble key={message.id} message={message} />
+                ))
+              )}
+              <div ref={messagesEndRef} />
             </div>
             
-            {errorSending && (
-              <div className="mt-2 text-xs text-red-500">
-                Erro ao enviar mensagem. Tente novamente.
+            {isVoiceChatActive && (
+              <div className="px-4 py-3 border-t">
+                <VoiceChatAgent apiKey={apiKey || ""} />
               </div>
             )}
             
-            <div className="flex justify-center mt-3">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-xs text-muted-foreground"
-                onClick={handleStartNewConversation}
-                disabled={isLoading || processingMessage}
-              >
-                <RefreshCw className="h-3 w-3 mr-1" /> 
-                Nova conversa
-              </Button>
+            <div className="p-4 border-t bg-muted/30">
+              <div className="flex space-x-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={`rounded-full p-2 ${isVoiceChatActive ? 'bg-primary/10 text-primary' : ''}`}
+                  onClick={toggleVoiceChat}
+                  title={isVoiceChatActive ? "Desativar chat por voz" : "Ativar chat por voz"}
+                  disabled={isLoading || processingMessage}
+                >
+                  <Mic className="h-5 w-5" />
+                </Button>
+                
+                <Input
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Digite sua mensagem..."
+                  className="flex-1"
+                  disabled={isLoading || processingMessage}
+                />
+                
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="rounded-full p-2"
+                  onClick={handleSendMessage}
+                  disabled={isLoading || processingMessage || inputValue.trim() === ""}
+                >
+                  {isLoading || processingMessage ? (
+                    <RefreshCw className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+                </Button>
+              </div>
+              
+              {errorSending && (
+                <div className="mt-2 text-xs text-red-500">
+                  Erro ao enviar mensagem. Tente novamente.
+                </div>
+              )}
+              
+              <div className="flex justify-center mt-3">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-xs text-muted-foreground"
+                  onClick={handleStartNewConversation}
+                  disabled={isLoading || processingMessage}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" /> 
+                  Nova conversa
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
