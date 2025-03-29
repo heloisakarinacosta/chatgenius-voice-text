@@ -48,6 +48,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
+        audioRef.current = null;
       }
     };
   }, []);
