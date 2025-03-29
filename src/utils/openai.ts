@@ -1,3 +1,4 @@
+
 import CryptoJS from 'crypto-js';
 import { embeddingService } from './embeddingService';
 
@@ -99,6 +100,7 @@ const isQuerySimilarToRecent = (query: string, queryHash: string): boolean => {
 
 // Prepara mensagens para a API da OpenAI, usando o sistema RAG otimizado
 const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAIMessage[]> => {
+  // Cria uma cópia das mensagens para evitar mutações
   let messages = [...options.messages];
   
   // Inicializa o serviço de embeddings se necessário
@@ -107,11 +109,21 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
   }
   
   // Verifica se há uma pergunta do usuário para buscar contexto relevante
-  const userMessages = messages.filter(msg => msg.role === "user");
-  const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
+  // CORREÇÃO: Melhora a lógica para identificar a última mensagem do usuário
+  let lastUserMessage: OpenAIMessage | null = null;
+  
+  // Percorre as mensagens de trás para frente para encontrar a última mensagem do usuário
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user" && messages[i].content.trim()) {
+      lastUserMessage = messages[i];
+      break;
+    }
+  }
   
   // Utiliza RAG apenas se o sistema estiver habilitado e houver uma mensagem do usuário
-  if (embeddingService.isEnabled() && lastUserMessage && lastUserMessage.content.trim()) {
+  if (embeddingService.isEnabled() && lastUserMessage) {
+    console.log("Última mensagem do usuário encontrada:", lastUserMessage.content.substring(0, 50));
+    
     // Evita processamento duplicado verificando se a consulta é similar a uma recente
     const userMessageHash = CryptoJS.SHA256(lastUserMessage.content).toString();
     const isDuplicate = isQuerySimilarToRecent(lastUserMessage.content, userMessageHash);
@@ -146,15 +158,15 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
           if (systemMessageIndex !== -1) {
             // Anexa à mensagem do sistema existente
             messages[systemMessageIndex].content += `\n\nUtilize as informações abaixo para responder à pergunta do usuário (apenas se for relevante):\n\n${contextContent}`;
+            console.log("Contexto relevante adicionado à conversa");
           } else {
             // Adiciona como uma nova mensagem do sistema se não existir nenhuma
             messages.unshift({
               role: "system",
               content: `Use as seguintes informações para responder às perguntas do usuário (apenas se for relevante):\n\n${contextContent}`
             });
+            console.log("Contexto relevante adicionado como nova mensagem do sistema");
           }
-          
-          console.log("Contexto relevante adicionado à conversa");
         } else {
           console.log("Nenhum contexto relevante encontrado para adicionar à conversa");
         }
@@ -170,10 +182,8 @@ const prepareMessages = async (options: OpenAICompletionOptions): Promise<OpenAI
       console.log("Sistema RAG está desabilitado");
     } else if (!lastUserMessage) {
       console.log("Não há mensagem do usuário para buscar contexto");
-    } else if (!lastUserMessage.content.trim()) {
-      console.log("Mensagem do usuário está vazia");
     } else {
-      console.log("Sistema RAG não está pronto ou não há mensagem do usuário");
+      console.log("Mensagem do usuário encontrada:", lastUserMessage.content.substring(0, 50));
     }
   }
   
@@ -232,6 +242,9 @@ export const callOpenAI = async (options: OpenAICompletionOptions, apiKey: strin
     // Log do tamanho do contexto sendo enviado para a API
     const totalContextSize = messages.reduce((sum, msg) => sum + msg.content.length, 0);
     console.log(`Enviando contexto para OpenAI: ${totalContextSize} caracteres`);
+    
+    // Log completo das mensagens sendo enviadas (apenas para debugging)
+    console.log("Mensagens enviadas para OpenAI:", JSON.stringify(messages.map(m => ({ role: m.role, content: m.content.substring(0, 50) + "..." }))));
     
     // Estabelece os parâmetros padrão
     const model = options.model || "gpt-3.5-turbo";

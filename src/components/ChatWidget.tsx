@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { useChat } from "@/contexts/ChatContext";
 import ChatBubble from "@/components/ChatBubble";
@@ -44,6 +45,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   const [processingMessage, setProcessingMessage] = useState(false);
   const [lastSentMessage, setLastSentMessage] = useState<string | null>(null);
   const [lastReceivedResponse, setLastReceivedResponse] = useState<string | null>(null);
+  const [alreadyProcessingMessages, setAlreadyProcessingMessages] = useState<Set<string>>(new Set());
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -96,7 +98,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
   };
   
   const isDuplicateUserMessage = (message: string): boolean => {
-    return message.trim().toLowerCase() === lastSentMessage?.trim().toLowerCase();
+    // Verificar mensagem idêntica recente
+    if (message.trim().toLowerCase() === lastSentMessage?.trim().toLowerCase()) {
+      return true;
+    }
+    
+    // Verificar se a mensagem é similar às 5 últimas mensagens do usuário
+    const recentUserMessages = messages
+      .filter(msg => msg.role === "user")
+      .slice(-5);
+      
+    return recentUserMessages.some(msg => 
+      msg.content.trim().toLowerCase() === message.trim().toLowerCase()
+    );
   };
   
   const handleSendMessage = async () => {
@@ -153,7 +167,19 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       } else {
         console.log("Message sent successfully");
         
-        await getAssistantResponse();
+        // Marca a mensagem como já processada para evitar duplicação
+        const messageHash = `${message.slice(0, 20)}-${Date.now()}`;
+        if (!alreadyProcessingMessages.has(messageHash)) {
+          setAlreadyProcessingMessages(prev => new Set(prev).add(messageHash));
+          await getAssistantResponse(message);
+          setAlreadyProcessingMessages(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(messageHash);
+            return newSet;
+          });
+        } else {
+          console.log("Ignorando processamento duplicado para mensagem:", message);
+        }
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -167,7 +193,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
     }
   };
   
-  const getAssistantResponse = async () => {
+  const getAssistantResponse = async (userMessage: string) => {
     if (!apiKey || !currentConversationId) return;
     
     try {
@@ -176,11 +202,29 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
         content: msg.content
       }));
       
-      if (agentConfig?.systemPrompt) {
-        conversationMessages.unshift({
-          role: "system",
-          content: agentConfig.systemPrompt
+      // Garante que a última mensagem enviada está incluída no contexto
+      const lastUserMessageIncluded = conversationMessages.some(
+        msg => msg.role === "user" && msg.content === userMessage
+      );
+      
+      if (!lastUserMessageIncluded) {
+        console.log("Adicionando última mensagem do usuário ao contexto:", userMessage);
+        conversationMessages.push({
+          role: "user",
+          content: userMessage
         });
+      }
+      
+      if (agentConfig?.systemPrompt) {
+        // Verificar se já existe uma mensagem do sistema
+        const hasSystemMessage = conversationMessages.some(msg => msg.role === "system");
+        
+        if (!hasSystemMessage) {
+          conversationMessages.unshift({
+            role: "system",
+            content: agentConfig.systemPrompt
+          });
+        }
       }
       
       const tempAssistantId = addMessage("...", "assistant");
@@ -195,6 +239,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ apiKey }) => {
       
       if (response === lastReceivedResponse) {
         console.log("Resposta duplicada detectada, não atualizando UI");
+        // Remove a mensagem temporária
         const filteredMessages = messages.filter(msg => msg.id !== tempAssistantId);
       } else {
         updateMessage(tempAssistantId, response);
