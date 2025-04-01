@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,11 +21,10 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
 ];
 
-// Reduced thresholds to better detect ambient sound
-const SILENCE_THRESHOLD = 2; // Lower threshold to better detect silence
-const MIN_VOICE_LEVEL = 5; // Reduced to improve voice detection
-const MIN_RECORDING_DURATION = 1000; // Minimum recording duration (1 second)
-const VOICE_DETECTION_TIMEOUT = 10000; // Time to wait for voice detection (10 seconds)
+const SILENCE_THRESHOLD = 3;
+const MIN_VOICE_LEVEL = 7;
+const MIN_RECORDING_DURATION = 1500;
+const VOICE_DETECTION_TIMEOUT = 8000;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -56,11 +54,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const voiceDetectionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceDetectedRef = useRef<boolean>(false);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioLevelsRef = useRef<number[]>([]);
   const forcedStopRef = useRef<boolean>(false);
+  const consecutiveSilenceCountRef = useRef<number>(0);
   
   const MAX_RETRIES = 3;
-  
+  const CONSECUTIVE_SILENCE_THRESHOLD = 3;
+
   const { 
     addMessage, 
     updateMessage,
@@ -70,7 +71,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 5; // Default to 5 seconds
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 5;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
   const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.4;
   const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
@@ -112,6 +113,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       recordingTimeoutRef.current = null;
     }
     
+    if (silenceDetectionIntervalRef.current) {
+      clearInterval(silenceDetectionIntervalRef.current);
+      silenceDetectionIntervalRef.current = null;
+    }
+    
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
@@ -147,6 +153,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     audioChunksRef.current = [];
     audioLevelsRef.current = [];
     forcedStopRef.current = false;
+    consecutiveSilenceCountRef.current = 0;
     
     console.log("Voice chat resources cleanup completed");
   };
@@ -184,6 +191,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       recordingStartTimeRef.current = Date.now();
       silenceStartRef.current = Date.now();
       voiceDetectedRef.current = false;
+      consecutiveSilenceCountRef.current = 0;
       
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -226,7 +234,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         console.log("Audio blob size:", audioBlob.size, "bytes", "type:", audioBlob.type);
         
-        // User forced stop should always process the audio
         if (forcedStopRef.current) {
           console.log("Processing audio due to user forced stop");
           await processAudioBlob(audioBlob);
@@ -234,8 +241,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
-        // Use audio levels history to improve voice detection
-        const hasVoice = audioLevelsRef.current.filter(level => level > MIN_VOICE_LEVEL).length > 3;
+        const voiceDetectedInAudio = audioLevelsRef.current.filter(level => level > MIN_VOICE_LEVEL).length > 2;
         
         if (audioBlob.size < 1000 || !apiKey) {
           console.log("Audio too small or API key missing, ignoring");
@@ -245,7 +251,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
-        // Check recording length is sufficient
         if (recordingLength < MIN_RECORDING_DURATION) {
           console.log("Recording too short, ignoring");
           processingAudioRef.current = false;
@@ -254,20 +259,16 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
-        // Improved voice detection logic using audio levels history
-        if (!hasVoice && !voiceDetectedRef.current) {
+        if (voiceDetectedInAudio || voiceDetectedRef.current) {
+          console.log("Voice detected in recording, processing");
+          await processAudioBlob(audioBlob);
+        } else {
           console.log("No voice detected in recording, ignoring");
           toast.info("Não detectamos sua voz. Por favor, tente novamente falando mais alto.");
           processingAudioRef.current = false;
           audioChunksRef.current = [];
           setStoppingRecording(false);
-          return;
         }
-        
-        // Process audio if there's voice or if user manually stopped
-        await processAudioBlob(audioBlob);
-        
-        audioChunksRef.current = [];
       };
       
       if (voiceDetectionTimerRef.current) {
@@ -282,6 +283,16 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           }
         }
       }, VOICE_DETECTION_TIMEOUT);
+      
+      if (silenceDetectionIntervalRef.current) {
+        clearInterval(silenceDetectionIntervalRef.current);
+      }
+      
+      silenceDetectionIntervalRef.current = setInterval(() => {
+        if (isRecording && voiceDetectedRef.current && !stoppingRecording && !processingAudioRef.current) {
+          checkForSilence();
+        }
+      }, 500);
       
       mediaRecorder.start(1000);
       setIsRecording(true);
@@ -336,9 +347,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }
       const average = sum / bufferLength;
       
-      // Store audio levels to improve voice detection
       audioLevelsRef.current.push(average);
-      // Limit history to avoid excessive memory usage
       if (audioLevelsRef.current.length > 20) {
         audioLevelsRef.current.shift();
       }
@@ -347,33 +356,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       if (average > MIN_VOICE_LEVEL) {
         voiceDetectedRef.current = true;
+        consecutiveSilenceCountRef.current = 0;
         
         if (voiceDetectionTimerRef.current) {
           clearTimeout(voiceDetectionTimerRef.current);
           voiceDetectionTimerRef.current = null;
         }
         
-        // Reset silence timer when voice is detected
         silenceStartRef.current = currentTime;
-      }
-      
-      // If audio level is below silence threshold
-      if (average < SILENCE_THRESHOLD && voiceDetectedRef.current) {
-        const elapsedSilence = currentTime - silenceStartRef.current;
-        
-        // If silence has been detected for long enough AND voice was detected before
-        if (elapsedSilence > SILENCE_DURATION && !processingAudioRef.current && !stoppingRecording) {
-          const recordingLength = currentTime - recordingStartTimeRef.current;
-          
-          if (recordingLength > MIN_RECORDING_DURATION) {
-            console.log(`Conversational pause detected after ${elapsedSilence}ms of silence`);
-            processingAudioRef.current = true;
-            
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-              stopRecording(false);
-            }
-          }
-        }
       }
       
       if (isRecording) {
@@ -382,6 +372,39 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     };
     
     checkAudioLevel();
+  };
+
+  const checkForSilence = () => {
+    if (!analyserRef.current || !isRecording || processingAudioRef.current || stoppingRecording) return;
+    
+    const currentTime = Date.now();
+    const elapsedSilence = currentTime - silenceStartRef.current;
+    const recordingLength = currentTime - recordingStartTimeRef.current;
+    
+    const recentAudioLevels = audioLevelsRef.current.slice(-5);
+    
+    const isSilent = recentAudioLevels.length > 0 && 
+                     recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
+    
+    if (isSilent) {
+      consecutiveSilenceCountRef.current++;
+      console.log(`Silence detected (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms`);
+    } else {
+      consecutiveSilenceCountRef.current = 0;
+    }
+    
+    if (consecutiveSilenceCountRef.current >= CONSECUTIVE_SILENCE_THRESHOLD && 
+        voiceDetectedRef.current && 
+        recordingLength > MIN_RECORDING_DURATION && 
+        elapsedSilence > SILENCE_DURATION) {
+      
+      console.log(`Sufficient silence detected (${elapsedSilence}ms), stopping recording`);
+      processingAudioRef.current = true;
+      
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        stopRecording(false);
+      }
+    }
   };
 
   const stopRecording = (userInitiated = true) => {
@@ -410,6 +433,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     if (voiceDetectionTimerRef.current) {
       clearTimeout(voiceDetectionTimerRef.current);
       voiceDetectionTimerRef.current = null;
+    }
+    
+    if (silenceDetectionIntervalRef.current) {
+      clearInterval(silenceDetectionIntervalRef.current);
+      silenceDetectionIntervalRef.current = null;
     }
     
     if (recordingTimeoutRef.current) {
