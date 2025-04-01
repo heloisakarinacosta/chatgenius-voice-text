@@ -37,12 +37,25 @@ const initDatabase = async () => {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      // Add these configurations to handle different authentication methods
+      // Configurações importantes para autenticação
+      enableKeepAlive: true,
       authPlugins: {
         mysql_native_password: () => ({ type: 'mysql_native_password' }),
         mysql_clear_password: () => ({ type: 'mysql_clear_password' }),
         sha256_password: () => ({ type: 'sha256_password' }),
         caching_sha2_password: () => ({ type: 'caching_sha2_password' })
+      },
+      // Forçar o uso do plugin de autenticação nativo se necessário
+      authSwitchHandler: (data, cb) => {
+        console.log('Auth switch requested to plugin:', data.pluginName);
+        if (data.pluginName === 'mysql_native_password') {
+          const password = process.env.DB_PASSWORD || '';
+          const authToken = Buffer.from(password).toString('binary');
+          cb(null, authToken);
+        } else {
+          console.log('Unsupported auth plugin requested:', data.pluginName);
+          cb(null);
+        }
       }
     });
     
@@ -74,6 +87,11 @@ const initDatabase = async () => {
     } else if (error.code === 'ECONNREFUSED') {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
       console.error('Check if the server is running and accessible at the configured host and port');
+    } else if (error.code === 'AUTH_SWITCH_PLUGIN_ERROR') {
+      console.error('AUTH PLUGIN ERROR: The server requested an unsupported authentication method');
+      console.error('Check MySQL configuration or use mysql_native_password plugin');
+      console.error('Example MySQL command to change auth method:');
+      console.error(`ALTER USER '${process.env.DB_USER || 'root'}'@'${process.env.DB_HOST || 'localhost'}' IDENTIFIED WITH mysql_native_password BY '${process.env.DB_PASSWORD || ''}';`);
     }
     
     console.log('Using file-based fallback data storage');
