@@ -1,4 +1,3 @@
-
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
@@ -28,14 +27,16 @@ const getDbConfig = () => {
       host: process.env.PROD_DB_HOST || 'localhost',
       user: process.env.PROD_DB_USER || 'root',
       password: process.env.PROD_DB_PASSWORD || '',
-      database: process.env.PROD_DB_NAME || 'chat_assistant'
+      database: process.env.PROD_DB_NAME || 'chat_assistant',
+      authPlugin: process.env.PROD_DB_AUTH_PLUGIN || 'mysql_native_password'
     };
   } else {
     return {
       host: process.env.DEV_DB_HOST || 'localhost',
       user: process.env.DEV_DB_USER || 'root',
       password: process.env.DEV_DB_PASSWORD || '',
-      database: process.env.DEV_DB_NAME || 'chat_assistant'
+      database: process.env.DEV_DB_NAME || 'chat_assistant',
+      authPlugin: process.env.DEV_DB_AUTH_PLUGIN || 'mysql_native_password'
     };
   }
 };
@@ -51,7 +52,9 @@ const initDatabase = async () => {
     console.log('Host:', dbConfig.host);
     console.log('User:', dbConfig.user);
     console.log('Database:', dbConfig.database);
+    console.log('Auth Plugin:', dbConfig.authPlugin);
     
+    // Create database connection pool
     pool = mysql.createPool({
       host: dbConfig.host,
       user: dbConfig.user,
@@ -60,26 +63,8 @@ const initDatabase = async () => {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      // Configurações importantes para autenticação
-      enableKeepAlive: true,
-      authPlugins: {
-        mysql_native_password: () => ({ type: 'mysql_native_password' }),
-        mysql_clear_password: () => ({ type: 'mysql_clear_password' }),
-        sha256_password: () => ({ type: 'sha256_password' }),
-        caching_sha2_password: () => ({ type: 'caching_sha2_password' })
-      },
-      // Forçar o uso do plugin de autenticação nativo se necessário
-      authSwitchHandler: (data, cb) => {
-        console.log('Auth switch requested to plugin:', data.pluginName);
-        if (data.pluginName === 'mysql_native_password') {
-          const password = dbConfig.password;
-          const authToken = Buffer.from(password).toString('binary');
-          cb(null, authToken);
-        } else {
-          console.log('Unsupported auth plugin requested:', data.pluginName);
-          cb(null);
-        }
-      }
+      // Simplified authentication configuration
+      authPlugin: dbConfig.authPlugin
     });
     
     console.log('Database pool initialized');
@@ -110,12 +95,16 @@ const initDatabase = async () => {
     } else if (error.code === 'ECONNREFUSED') {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
       console.error('Check if the server is running and accessible at the configured host and port');
-    } else if (error.code === 'AUTH_SWITCH_PLUGIN_ERROR') {
+    } else if (error.code === 'AUTH_SWITCH_PLUGIN_ERROR' || error.message.includes('AUTH_SWITCH_PLUGIN_ERROR')) {
       const dbConfig = getDbConfig();
       console.error('AUTH PLUGIN ERROR: The server requested an unsupported authentication method');
-      console.error('Check MySQL configuration or use mysql_native_password plugin');
-      console.error('Example MySQL command to change auth method:');
-      console.error(`ALTER USER '${dbConfig.user}'@'${dbConfig.host}' IDENTIFIED WITH mysql_native_password BY '${dbConfig.password}';`);
+      console.error(`You specified auth plugin: ${dbConfig.authPlugin}`);
+      console.error('Try updating your .env file with the correct auth plugin:');
+      console.error('- For MySQL 8+: caching_sha2_password');
+      console.error('- For MySQL 5.7 or MariaDB: mysql_native_password');
+      console.error('Or run this SQL command to change the authentication method:');
+      console.error(`ALTER USER '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}' IDENTIFIED WITH mysql_native_password BY '${dbConfig.password || ''}';`);
+      console.error('FLUSH PRIVILEGES;');
     }
     
     console.log('Using file-based fallback data storage');
