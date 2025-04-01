@@ -148,11 +148,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   useEffect(() => {
     console.log("VoiceChatAgent: API key present:", !!apiKey);
     
-    if (apiKey) {
-      console.log("Auto-starting recording");
-      startRecording();
-    }
-    
     return cleanupResources;
   }, [apiKey]);
 
@@ -459,13 +454,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         
         toast.info("Não conseguimos entender o que você disse. Por favor, tente novamente.");
         
-        setTimeout(() => {
-          if (!isRecording && !isPlaying && !stoppingRecording) {
-            console.log("Auto-restarting recording after empty transcription");
-            startRecording();
-          }
-        }, 1000);
-        
         return;
       }
       
@@ -563,12 +551,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           setIsProcessing(false);
           processingAudioRef.current = false;
           currentStreamingMessageId.current = null;
-          
-          setTimeout(() => {
-            if (!isRecording && !isPlaying && !stoppingRecording) {
-              startRecording();
-            }
-          }, 2000);
         },
         onError: (error) => {
           console.error("Error getting streaming response:", error);
@@ -578,12 +560,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           setIsProcessing(false);
           processingAudioRef.current = false;
           currentStreamingMessageId.current = null;
-          
-          setTimeout(() => {
-            if (!isRecording && !isPlaying && !stoppingRecording) {
-              startRecording();
-            }
-          }, 2000);
         }
       });
     } catch (error) {
@@ -593,12 +569,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       });
       setIsProcessing(false);
       processingAudioRef.current = false;
-      
-      setTimeout(() => {
-        if (!isRecording && !isPlaying && !stoppingRecording) {
-          startRecording();
-        }
-      }, 2000);
     }
   };
 
