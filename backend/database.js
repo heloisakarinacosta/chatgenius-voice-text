@@ -18,22 +18,45 @@ const ensureDataDirectory = () => {
   return dataDir;
 };
 
+// Get database configuration based on environment
+const getDbConfig = () => {
+  const env = process.env.NODE_ENV || 'development';
+  console.log(`Current environment: ${env}`);
+
+  if (env === 'production') {
+    return {
+      host: process.env.PROD_DB_HOST || 'localhost',
+      user: process.env.PROD_DB_USER || 'root',
+      password: process.env.PROD_DB_PASSWORD || '',
+      database: process.env.PROD_DB_NAME || 'chat_assistant'
+    };
+  } else {
+    return {
+      host: process.env.DEV_DB_HOST || 'localhost',
+      user: process.env.DEV_DB_USER || 'root',
+      password: process.env.DEV_DB_PASSWORD || '',
+      database: process.env.DEV_DB_NAME || 'chat_assistant'
+    };
+  }
+};
+
 // Initialize database connection pool
 const initDatabase = async () => {
   try {
     // Ensure the data directory exists for fallback storage
     ensureDataDirectory();
     
+    const dbConfig = getDbConfig();
     console.log('Initializing database connection with the following parameters:');
-    console.log('Host:', process.env.DB_HOST || 'localhost');
-    console.log('User:', process.env.DB_USER || 'root');
-    console.log('Database:', process.env.DB_NAME || 'chat_assistant');
+    console.log('Host:', dbConfig.host);
+    console.log('User:', dbConfig.user);
+    console.log('Database:', dbConfig.database);
     
     pool = mysql.createPool({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'chat_assistant',
+      host: dbConfig.host,
+      user: dbConfig.user,
+      password: dbConfig.password,
+      database: dbConfig.database,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
@@ -49,7 +72,7 @@ const initDatabase = async () => {
       authSwitchHandler: (data, cb) => {
         console.log('Auth switch requested to plugin:', data.pluginName);
         if (data.pluginName === 'mysql_native_password') {
-          const password = process.env.DB_PASSWORD || '';
+          const password = dbConfig.password;
           const authToken = Buffer.from(password).toString('binary');
           cb(null, authToken);
         } else {
@@ -88,10 +111,11 @@ const initDatabase = async () => {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
       console.error('Check if the server is running and accessible at the configured host and port');
     } else if (error.code === 'AUTH_SWITCH_PLUGIN_ERROR') {
+      const dbConfig = getDbConfig();
       console.error('AUTH PLUGIN ERROR: The server requested an unsupported authentication method');
       console.error('Check MySQL configuration or use mysql_native_password plugin');
       console.error('Example MySQL command to change auth method:');
-      console.error(`ALTER USER '${process.env.DB_USER || 'root'}'@'${process.env.DB_HOST || 'localhost'}' IDENTIFIED WITH mysql_native_password BY '${process.env.DB_PASSWORD || ''}';`);
+      console.error(`ALTER USER '${dbConfig.user}'@'${dbConfig.host}' IDENTIFIED WITH mysql_native_password BY '${dbConfig.password}';`);
     }
     
     console.log('Using file-based fallback data storage');
