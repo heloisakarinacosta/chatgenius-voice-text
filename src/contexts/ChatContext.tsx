@@ -12,7 +12,10 @@ import {
   ChatContextType,
   AgentFunction,
   TrainingFile,
-  VoiceConfig
+  VoiceConfig,
+  KnowledgeType,
+  FineTuningConfig,
+  AssistantConfig
 } from "@/types/chat";
 
 // Re-export the types
@@ -24,7 +27,10 @@ export type {
   AdminConfig,
   AgentFunction,
   TrainingFile,
-  VoiceConfig
+  VoiceConfig,
+  KnowledgeType,
+  FineTuningConfig,
+  AssistantConfig
 };
 
 // Create the chat context with correct types
@@ -59,7 +65,11 @@ export const ChatContext = createContext<ChatContextType>({
     model: "gpt-4o",
     temperature: 0.7,
     maxTokens: 1000,
-    detectEmotion: false
+    detectEmotion: false,
+    knowledgeType: 'rag',
+    rag: { enabled: true },
+    fineTuning: { enabled: false, modelId: '', status: 'not_started' },
+    assistant: { enabled: false, assistantId: '', name: '' }
   },
   adminConfig: {
     username: "admin",
@@ -121,7 +131,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     model: "gpt-4o", 
     temperature: 0.7,
     maxTokens: 1000,
-    detectEmotion: false
+    detectEmotion: false,
+    knowledgeType: 'rag',
+    rag: { enabled: true },
+    fineTuning: { enabled: false, modelId: '', status: 'not_started' },
+    assistant: { enabled: false, assistantId: '', name: '' }
   });
   
   const [adminConfig, setAdminConfig] = useState<AdminConfig>({
@@ -172,7 +186,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           voice: {
             ...agentConfig.voice, // Default voice values
             ...agentCfg.voice     // Voice values from database
-          }
+          },
+          // Ensure new fields have defaults
+          knowledgeType: agentCfg.knowledgeType || 'rag',
+          rag: agentCfg.rag || { enabled: true },
+          fineTuning: agentCfg.fineTuning || { enabled: false, modelId: '', status: 'not_started' },
+          assistant: agentCfg.assistant || { enabled: false, assistantId: '', name: '' }
         };
         setAgentConfig(mergedAgentConfig);
       }

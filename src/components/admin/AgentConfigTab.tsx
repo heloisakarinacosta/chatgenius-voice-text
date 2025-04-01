@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw, Volume2, FileText, HelpCircle, Mic, Code, Brain, Bot, Braces } from "lucide-react";
+import { RefreshCw, Volume2, FileText, HelpCircle, Mic, Code, Brain, Bot, Braces, Sparkles, MessageSquareCode, Command } from "lucide-react";
 import { toast } from "sonner";
-import { AgentConfig } from "@/contexts/ChatContext";
+import { AgentConfig, KnowledgeType } from "@/contexts/ChatContext";
 import { 
   Tooltip,
   TooltipContent,
@@ -19,6 +19,9 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { format } from "date-fns";
 
 interface AgentConfigTabProps {
   agentConfig: AgentConfig;
@@ -31,7 +34,25 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
   updateAgentConfig,
   functions
 }) => {
-  const [updatedAgentConfig, setUpdatedAgentConfig] = useState<AgentConfig>({ ...agentConfig });
+  // Inicializar valores padrão para as novas configurações
+  const initConfig = {
+    ...agentConfig,
+    knowledgeType: agentConfig.knowledgeType || 'rag',
+    rag: agentConfig.rag || { enabled: true },
+    fineTuning: agentConfig.fineTuning || { 
+      enabled: false, 
+      modelId: '', 
+      status: 'not_started'
+    },
+    assistant: agentConfig.assistant || {
+      enabled: false,
+      assistantId: '',
+      name: ''
+    }
+  };
+  
+  const [updatedAgentConfig, setUpdatedAgentConfig] = useState<AgentConfig>(initConfig);
+  const [activeKnowledgeTab, setActiveKnowledgeTab] = useState<KnowledgeType>(initConfig.knowledgeType || 'rag');
 
   // Opções de voz da OpenAI
   const voiceOptions = [
@@ -69,6 +90,7 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
     const updatedConfig = {
       ...updatedAgentConfig,
       functions: functions,
+      knowledgeType: activeKnowledgeTab
     };
     
     updateAgentConfig(updatedConfig);
@@ -116,10 +138,24 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
     }
   };
 
-  // Inicializar configurações de voz se necessário
+  // Inicializar configurações de voz e atualizar o tipo de conhecimento ativo
   useEffect(() => {
     initVoiceConfig();
+    setActiveKnowledgeTab(updatedAgentConfig.knowledgeType || 'rag');
   }, []);
+  
+  // Handler para alternar entre os tipos de conhecimento
+  const handleKnowledgeTypeChange = (type: KnowledgeType) => {
+    setActiveKnowledgeTab(type);
+    setUpdatedAgentConfig({
+      ...updatedAgentConfig,
+      knowledgeType: type
+    });
+  };
+  
+  // Verificar se temos uma chave API configurada
+  const hasApiKey = !!updatedAgentConfig.fineTuning?.modelId || 
+                   !!updatedAgentConfig.assistant?.assistantId;
 
   return (
     <Card>
@@ -159,6 +195,351 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
           <p className="text-sm text-muted-foreground">
             Este é o prompt de sistema que define o comportamento e conhecimento do seu assistente AI.
           </p>
+        </div>
+        
+        <Separator />
+        
+        {/* Seção de Tipo de Conhecimento */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-medium">Tipo de Conhecimento</h3>
+          </div>
+          
+          <RadioGroup 
+            value={activeKnowledgeTab}
+            onValueChange={(value) => handleKnowledgeTypeChange(value as KnowledgeType)}
+            className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2"
+          >
+            <div className={`border rounded-md p-4 relative flex flex-col items-center gap-2 
+              ${activeKnowledgeTab === 'rag' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <RadioGroupItem value="rag" id="rag" className="sr-only" />
+              <Label
+                htmlFor="rag"
+                className="flex flex-col items-center gap-2 cursor-pointer w-full"
+              >
+                <Braces className="h-8 w-8 text-primary" />
+                <span className="font-medium">RAG</span>
+                <span className="text-xs text-center text-muted-foreground">
+                  Recuperação com Augmented Generation
+                </span>
+                {activeKnowledgeTab === 'rag' && (
+                  <Badge className="absolute top-2 right-2">Ativo</Badge>
+                )}
+              </Label>
+            </div>
+            
+            <div className={`border rounded-md p-4 relative flex flex-col items-center gap-2 
+              ${activeKnowledgeTab === 'fine-tuning' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <RadioGroupItem value="fine-tuning" id="fine-tuning" className="sr-only" />
+              <Label
+                htmlFor="fine-tuning"
+                className="flex flex-col items-center gap-2 cursor-pointer w-full"
+              >
+                <Sparkles className="h-8 w-8 text-primary" />
+                <span className="font-medium">Fine-Tuning</span>
+                <span className="text-xs text-center text-muted-foreground">
+                  Modelo especializado em seu conteúdo
+                </span>
+                {activeKnowledgeTab === 'fine-tuning' && (
+                  <Badge className="absolute top-2 right-2">Ativo</Badge>
+                )}
+              </Label>
+            </div>
+            
+            <div className={`border rounded-md p-4 relative flex flex-col items-center gap-2 
+              ${activeKnowledgeTab === 'assistant' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <RadioGroupItem value="assistant" id="assistant" className="sr-only" />
+              <Label
+                htmlFor="assistant"
+                className="flex flex-col items-center gap-2 cursor-pointer w-full"
+              >
+                <MessageSquareCode className="h-8 w-8 text-primary" />
+                <span className="font-medium">Assistente OpenAI</span>
+                <span className="text-xs text-center text-muted-foreground">
+                  Usar assistente pré-configurado
+                </span>
+                <Badge className="bg-yellow-600 hover:bg-yellow-700 absolute top-2 right-2">Beta</Badge>
+                {activeKnowledgeTab === 'assistant' && (
+                  <Badge className="absolute top-2 left-2">Ativo</Badge>
+                )}
+              </Label>
+            </div>
+          </RadioGroup>
+          
+          {/* Conteúdos específicos para cada tipo de conhecimento */}
+          <div className="pt-4">
+            {activeKnowledgeTab === 'rag' && (
+              <div className="space-y-4 border p-4 rounded-md">
+                <div className="flex items-center gap-2">
+                  <Braces className="h-5 w-5 text-primary" />
+                  <h4 className="text-md font-medium">Configurações RAG</h4>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="ragEnabled" className="font-medium">RAG Ativado</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-5 w-5">
+                            <HelpCircle className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm">
+                          <p>Recuperação com Augmented Generation permite que o modelo acesse seu conteúdo para responder perguntas.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Switch
+                    id="ragEnabled"
+                    checked={updatedAgentConfig.rag?.enabled}
+                    onCheckedChange={(checked) => setUpdatedAgentConfig({
+                      ...updatedAgentConfig,
+                      rag: {
+                        ...updatedAgentConfig.rag,
+                        enabled: checked,
+                      },
+                    })}
+                  />
+                </div>
+                
+                <div className="pt-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                    <Label>Arquivos de Treinamento</Label>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {updatedAgentConfig.trainingFiles.length > 0 
+                      ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s) e ativos para conhecimento personalizado.`
+                      : 'Nenhum arquivo carregado. Acesse a aba "Arquivos" para adicionar arquivos de treinamento.'}
+                  </p>
+                  <div className="mt-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => document.querySelector('[value="files"]')?.dispatchEvent(new MouseEvent('click'))}
+                    >
+                      Gerenciar Arquivos
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="bg-primary/5 p-3 rounded-md text-sm mt-4">
+                  <p>
+                    <strong>Como funciona o RAG:</strong> O sistema analisa seus documentos e permite que o assistente 
+                    use essas informações para responder perguntas com precisão. Ideal para base de conhecimento, FAQs e suporte técnico.
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            {activeKnowledgeTab === 'fine-tuning' && (
+              <div className="space-y-4 border p-4 rounded-md">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <h4 className="text-md font-medium">Configurações de Fine-Tuning</h4>
+                </div>
+                
+                {!updatedAgentConfig.fineTuning?.modelId ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Fine-tuning cria um modelo personalizado treinado em seus dados específicos, 
+                      permitindo respostas mais precisas e reduzindo custos de token.
+                    </p>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="fineTuningId">ID do Modelo Fine-Tuned</Label>
+                      <Input
+                        id="fineTuningId"
+                        placeholder="ft:gpt-3.5-turbo:my-org:custom_suffix:id"
+                        value={updatedAgentConfig.fineTuning?.modelId || ''}
+                        onChange={(e) => setUpdatedAgentConfig({
+                          ...updatedAgentConfig,
+                          fineTuning: {
+                            ...updatedAgentConfig.fineTuning,
+                            modelId: e.target.value,
+                            enabled: !!e.target.value,
+                          }
+                        })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Adicione o ID do modelo fine-tuned fornecido pela OpenAI.
+                      </p>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 mt-4">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => window.open('https://platform.openai.com/finetune', '_blank')}
+                        className="w-fit"
+                      >
+                        <Command className="h-4 w-4 mr-2" />
+                        Acessar Console OpenAI
+                      </Button>
+                    </div>
+                    
+                    <div className="bg-primary/5 p-3 rounded-md text-sm mt-4">
+                      <p>
+                        <strong>Como funciona o Fine-tuning:</strong> Crie um modelo especializado treinado no seu conteúdo.
+                        Isto melhora a precisão e relevância das respostas, além de reduzir o custo por token comparado ao RAG.
+                      </p>
+                      <p className="mt-2">
+                        <strong>Quando usar:</strong> Ideal para casos de uso específicos onde o modelo precisa aprender um estilo, formato
+                        ou conhecimento especializado consistente.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="fineTuningEnabled" className="font-medium">Fine-tuning Ativado</Label>
+                      </div>
+                      <Switch
+                        id="fineTuningEnabled"
+                        checked={updatedAgentConfig.fineTuning?.enabled}
+                        onCheckedChange={(checked) => setUpdatedAgentConfig({
+                          ...updatedAgentConfig,
+                          fineTuning: {
+                            ...updatedAgentConfig.fineTuning,
+                            enabled: checked,
+                          },
+                        })}
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label>ID do Modelo</Label>
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={updatedAgentConfig.fineTuning?.modelId || ''}
+                          onChange={(e) => setUpdatedAgentConfig({
+                            ...updatedAgentConfig,
+                            fineTuning: {
+                              ...updatedAgentConfig.fineTuning,
+                              modelId: e.target.value,
+                            }
+                          })}
+                          className="flex-1"
+                        />
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => window.open('https://platform.openai.com/finetune', '_blank')}
+                        >
+                          <Command className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {updatedAgentConfig.fineTuning?.status && (
+                      <div className="flex gap-2 items-center">
+                        <Label className="text-sm">Status:</Label>
+                        <Badge variant={
+                          updatedAgentConfig.fineTuning?.status === 'succeeded' ? 'default' : 
+                          updatedAgentConfig.fineTuning?.status === 'pending' ? 'outline' : 'secondary'
+                        }>
+                          {updatedAgentConfig.fineTuning?.status === 'succeeded' ? 'Concluído' :
+                           updatedAgentConfig.fineTuning?.status === 'pending' ? 'Pendente' :
+                           'Não iniciado'}
+                        </Badge>
+                      </div>
+                    )}
+                    
+                    {updatedAgentConfig.fineTuning?.lastTrainingDate && (
+                      <div className="flex gap-2 items-center">
+                        <Label className="text-sm">Último treinamento:</Label>
+                        <span className="text-sm text-muted-foreground">
+                          {format(new Date(updatedAgentConfig.fineTuning.lastTrainingDate), 'dd/MM/yyyy HH:mm')}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="pt-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        <Label>Arquivos de Treinamento</Label>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Os arquivos utilizados para fine-tuning são gerenciados no console da OpenAI.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {activeKnowledgeTab === 'assistant' && (
+              <div className="space-y-4 border p-4 rounded-md">
+                <div className="flex items-center gap-2">
+                  <MessageSquareCode className="h-5 w-5 text-primary" />
+                  <h4 className="text-md font-medium">Assistente OpenAI</h4>
+                  <Badge className="bg-yellow-600 hover:bg-yellow-700">Beta</Badge>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="assistantId">ID do Assistente</Label>
+                  <Input
+                    id="assistantId"
+                    placeholder="asst_abc123"
+                    value={updatedAgentConfig.assistant?.assistantId || ''}
+                    onChange={(e) => setUpdatedAgentConfig({
+                      ...updatedAgentConfig,
+                      assistant: {
+                        ...updatedAgentConfig.assistant,
+                        assistantId: e.target.value,
+                        enabled: !!e.target.value,
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Adicione o ID do assistente criado no console da OpenAI.
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="assistantName">Nome do Assistente (opcional)</Label>
+                  <Input
+                    id="assistantName"
+                    placeholder="Meu Assistente Especializado"
+                    value={updatedAgentConfig.assistant?.name || ''}
+                    onChange={(e) => setUpdatedAgentConfig({
+                      ...updatedAgentConfig,
+                      assistant: {
+                        ...updatedAgentConfig.assistant,
+                        name: e.target.value,
+                      }
+                    })}
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-2 mt-4">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => window.open('https://platform.openai.com/assistants', '_blank')}
+                    className="w-fit"
+                  >
+                    <Command className="h-4 w-4 mr-2" />
+                    Acessar Assistentes OpenAI
+                  </Button>
+                </div>
+                
+                <div className="bg-primary/5 p-3 rounded-md text-sm mt-4">
+                  <p>
+                    <strong>Como funciona o Assistente OpenAI:</strong> Utilize um assistente já configurado na plataforma OpenAI,
+                    com todas as suas capacidades e configurações específicas.
+                  </p>
+                  <p className="mt-2">
+                    <strong>Vantagens:</strong> Rápida implantação, funcionalidades avançadas como memória integrada e personalização através da interface da OpenAI.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
         <Separator />
@@ -587,29 +968,6 @@ const AgentConfigTab: React.FC<AgentConfigTabProps> = ({
             </div>
           </div>
         )}
-
-        <Separator />
-
-        <div className="pt-2">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-muted-foreground" />
-            <Label>Arquivos de Treinamento</Label>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {updatedAgentConfig.trainingFiles.length > 0 
-              ? `${updatedAgentConfig.trainingFiles.length} arquivo(s) carregado(s) e ativos para conhecimento personalizado.`
-              : 'Nenhum arquivo carregado. Acesse a aba "Arquivos" para adicionar arquivos de treinamento.'}
-          </p>
-          <div className="mt-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => document.querySelector('[value="files"]')?.dispatchEvent(new MouseEvent('click'))}
-            >
-              Gerenciar Arquivos
-            </Button>
-          </div>
-        </div>
       </CardContent>
       <CardFooter>
         <Button onClick={saveAgentConfig}>Salvar Alterações</Button>

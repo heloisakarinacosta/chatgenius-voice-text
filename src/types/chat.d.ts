@@ -53,6 +53,21 @@ export interface TrainingFile {
   timestamp: Date;
 }
 
+export type KnowledgeType = 'rag' | 'fine-tuning' | 'assistant';
+
+export interface FineTuningConfig {
+  enabled: boolean;
+  modelId: string;
+  status: string;
+  lastTrainingDate?: Date;
+}
+
+export interface AssistantConfig {
+  enabled: boolean;
+  assistantId: string;
+  name: string;
+}
+
 export interface AgentConfig {
   systemPrompt: string;
   functions: AgentFunction[];
@@ -62,6 +77,12 @@ export interface AgentConfig {
   temperature?: number;
   maxTokens?: number;
   detectEmotion?: boolean;
+  knowledgeType: KnowledgeType;
+  rag: {
+    enabled: boolean;
+  };
+  fineTuning: FineTuningConfig;
+  assistant: AssistantConfig;
 }
 
 export interface AdminConfig {
