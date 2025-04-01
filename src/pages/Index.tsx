@@ -36,7 +36,7 @@ const Index = () => {
         setTimeout(() => reject(new Error('Request timeout')), 3000)
       );
       
-      const fetchPromise = fetch(`http://localhost:3001/api/admin/api-key?_=${cacheBuster}`, {
+      const fetchPromise = fetch(`http://localhost:8080/api/admin/api-key?_=${cacheBuster}`, {
         headers: { 
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',

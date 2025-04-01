@@ -128,7 +128,7 @@ const Admin = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => window.open('http://localhost:3001/api/health', '_blank')}
+                  onClick={() => window.open('http://localhost:8080/api/health', '_blank')}
                 >
                   Verificar API
                 </Button>
