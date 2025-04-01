@@ -73,7 +73,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
           await audioRef.current.play();
         } catch (error) {
           console.error("Error playing queued audio:", error);
-          // Se não conseguir reproduzir, tente o próximo item
+          // If can't play, try the next item
           isProcessingQueue.current = false;
           processQueue();
         }
@@ -87,13 +87,13 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const isDuplicateText = (text: string): boolean => {
     if (!text || text.length < 5) return false;
     
-    // Verificar se o texto é muito similar ao último texto reproduzido
+    // Check if text is very similar to the last played text
     const lastText = lastPlayedTextRef.current;
     if (lastText.includes(text) || text.includes(lastText)) {
       return true;
     }
     
-    // Verificar se o texto está contido em algum dos chunks anteriores
+    // Check if text is contained in any previous chunks
     return textChunksRef.current.some(chunk => 
       chunk.includes(text) || text.includes(chunk)
     );
@@ -129,18 +129,18 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   
   // Function to play streaming text
   const playStreamingText = (url: string, text: string, isComplete: boolean = false) => {
-    // Verificar se este texto é um duplicado
+    // Check if this text is a duplicate
     if (isDuplicateText(text)) {
       console.log("Skipping duplicate streaming text:", text.substring(0, 30));
       return;
     }
     
-    // Para streaming, atualizamos o último texto reproduzido apenas em mensagens completas
+    // For streaming, update the last played text only on complete messages
     if (isComplete) {
       lastPlayedTextRef.current = text;
     }
     
-    // Adicionar texto ao histórico
+    // Add text to history
     textChunksRef.current.push(text);
     
     // Manter apenas os últimos 10 chunks para economizar memória
@@ -192,7 +192,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
-  // Limpar o histórico de texto reproduzido
+  // Clear played text history
   const clearTextHistory = () => {
     lastPlayedTextRef.current = "";
     textChunksRef.current = [];
