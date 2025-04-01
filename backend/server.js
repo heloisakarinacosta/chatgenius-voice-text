@@ -12,7 +12,7 @@ const conversationRoutes = require('./routes/conversation');
 const trainingRoutes = require('./routes/training');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors());
