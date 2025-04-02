@@ -1,4 +1,3 @@
-
 // Types for Chat Context
 
 export interface Message {
@@ -35,6 +34,7 @@ export interface VoiceConfig {
   waitWithoutPunctuation?: number;
   waitAfterNumber?: number;
   endCallMessage?: string;
+  continuousMode?: boolean;
 }
 
 export interface AgentFunction {
