@@ -36,6 +36,7 @@ const Index = () => {
         setTimeout(() => reject(new Error('Request timeout')), 3000)
       );
       
+      // Use the correct port number (8080) for the backend server
       const fetchPromise = fetch(`http://localhost:8080/api/admin/api-key?_=${cacheBuster}`, {
         headers: { 
           'Cache-Control': 'no-cache, no-store, must-revalidate',
