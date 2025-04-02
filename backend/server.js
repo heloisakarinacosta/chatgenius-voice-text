@@ -13,11 +13,12 @@ const conversationRoutes = require('./routes/conversation');
 const trainingRoutes = require('./routes/training');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
+const DEV_PORT = 8080;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://191.232.33.131:3000', 'http://191.232.33.131:8080'],
+  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://191.232.33.131:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));

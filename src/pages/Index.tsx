@@ -23,6 +23,11 @@ const Index = () => {
   const [tempApiKey, setTempApiKey] = useState("");
   const [apiCheckInProgress, setApiCheckInProgress] = useState(false);
 
+  // Determine the current API URL based on environment
+  const apiBaseUrl = process.env.NODE_ENV === 'production' 
+    ? 'http://191.232.33.131:3000' 
+    : 'http://localhost:8080';
+
   // Function to fetch API key with retry limits and backoff
   const fetchApiKey = useCallback(async () => {
     if (apiCheckInProgress) return { apiKey: adminConfig?.apiKey || null };
@@ -36,8 +41,8 @@ const Index = () => {
         setTimeout(() => reject(new Error('Request timeout')), 3000)
       );
       
-      // Use the correct port number (8080) for the backend server
-      const fetchPromise = fetch(`http://localhost:8080/api/admin/api-key?_=${cacheBuster}`, {
+      // Use the dynamic API URL based on environment
+      const fetchPromise = fetch(`${apiBaseUrl}/api/admin/api-key?_=${cacheBuster}`, {
         headers: { 
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -88,7 +93,7 @@ const Index = () => {
     } finally {
       setApiCheckInProgress(false);
     }
-  }, [adminConfig, backendError, apiCheckInProgress]);
+  }, [adminConfig, backendError, apiCheckInProgress, apiBaseUrl]);
 
   // Fetch API key from backend, with reduced stale time and cache time
   // Updated to use gcTime instead of cacheTime for React Query v5+

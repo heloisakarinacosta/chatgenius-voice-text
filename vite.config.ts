@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
   },
   preview: {
     host: "::",
-    port: 8080,
+    port: 3000,
     headers: {
       'Content-Security-Policy': "default-src 'self' http://localhost:* http://191.232.33.131:* https://*.openai.com https://*.googleapis.com https://*.productfruits.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com https://*.productfruits.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* http://191.232.33.131:* https://*.openai.com https://api.openai.com https://*.productfruits.com wss://*.googleapis.com https://*.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.productfruits.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://* http://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
     }
@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => ({
   },
   define: {
     'process.env': {
-      PORT: process.env.PORT || 8080
+      PORT: process.env.PORT || (mode === 'production' ? 3000 : 8080)
     }
   }
 }));
