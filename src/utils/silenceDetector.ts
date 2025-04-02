@@ -1,12 +1,11 @@
 
-// src/utils/silenceDetector.ts
-
 interface SilenceDetectorConfig {
   silenceThreshold: number;
   minVoiceLevel: number;
   silenceDuration: number;
   minRecordingDuration: number;
   consecutiveSilenceThreshold: number;
+  continuousModeEnabled?: boolean;
 }
 
 class SilenceDetector {
@@ -29,10 +28,10 @@ class SilenceDetector {
   private silenceDuration: number = 800;
   private minRecordingDuration: number = 1000;
   private consecutiveSilenceThreshold: number = 8;
+  private continuousMode: boolean = true;
   
   private initialized: boolean = false;
-  private debugMode: boolean = true;
-  private continuousMode: boolean = true;
+  private debugMode: boolean = false;
   
   initialize(
     stream: MediaStream, 
@@ -48,6 +47,7 @@ class SilenceDetector {
       this.silenceDuration = config.silenceDuration ?? this.silenceDuration;
       this.minRecordingDuration = config.minRecordingDuration ?? this.minRecordingDuration;
       this.consecutiveSilenceThreshold = config.consecutiveSilenceThreshold ?? this.consecutiveSilenceThreshold;
+      this.continuousMode = config.continuousModeEnabled ?? this.continuousMode;
     }
     
     this.stream = stream;
@@ -71,11 +71,6 @@ class SilenceDetector {
       consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
       continuousMode: this.continuousMode
     });
-  }
-  
-  setContinuousMode(enabled: boolean) {
-    this.continuousMode = enabled;
-    this.log(`Continuous mode ${enabled ? 'enabled' : 'disabled'}`);
   }
   
   private log(...args: any[]) {
@@ -172,7 +167,7 @@ class SilenceDetector {
       // Detecção de voz com histerese
       if (recentAverage > this.minVoiceLevel + 0.2) {
         if (!this.voiceDetected) {
-          this.log(`Voice detected with level: ${recentAverage.toFixed(2)} (threshold: ${this.minVoiceLevel.toFixed(2)})`);
+          this.log(`Voice detected with level: ${recentAverage.toFixed(2)}`);
           
           // Feedback sonoro (opcional)
           this.playDetectionTone(660, 0.05, 0.1);
@@ -187,8 +182,8 @@ class SilenceDetector {
       if (Date.now() % 1000 < 50) {
         this.log(
           `Audio levels: weighted=${recentAverage.toFixed(2)}, ` +
-          `voice=${this.voiceDetected}, silence=${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}, ` +
-          `elapsed=${Date.now() - this.silenceStartTime}ms`
+          `voice=${voiceAverage.toFixed(2)}, ` +
+          `voice detected=${this.voiceDetected}`
         );
       }
       
@@ -208,7 +203,7 @@ class SilenceDetector {
   }
   
   private checkForSilence() {
-    if (!this.initialized || !this.continuousMode) return;
+    if (!this.initialized) return;
     
     const currentTime = Date.now();
     const elapsedSilence = currentTime - this.silenceStartTime;
@@ -237,35 +232,31 @@ class SilenceDetector {
       this.consecutiveSilenceCount += 1;
       
       // Log quando começamos a detectar silêncio
-      if (this.consecutiveSilenceCount === 3) {
-        this.log(`Silence detected (${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}), avg level=${avgLevel.toFixed(2)}, threshold=${this.silenceThreshold}`);
+      if (this.consecutiveSilenceCount === 1) {
+        this.log(`Silence started: level=${avgLevel.toFixed(2)}`);
       }
       
       // Log a cada 5 contagens
-      if (this.consecutiveSilenceCount % 5 === 0 && this.consecutiveSilenceCount > 3) {
+      if (this.consecutiveSilenceCount % 5 === 0) {
         this.log(`Silence continuing: count=${this.consecutiveSilenceCount}, level=${avgLevel.toFixed(2)}`);
       }
     } else {
       if (this.consecutiveSilenceCount > 0) {
-        this.log(`Resetting silence counter after ${this.consecutiveSilenceCount} samples, current level=${avgLevel.toFixed(2)}`);
+        this.log(`Silence broken after ${this.consecutiveSilenceCount} counts`);
       }
       this.consecutiveSilenceCount = 0;
       this.silenceStartTime = currentTime;
     }
     
-    // Condições para considerar o silêncio suficiente para parar a gravação:
-    // 1. Voz foi detectada anteriormente
-    // 2. Gravação durou pelo menos o mínimo de tempo
-    // 3. Temos amostras de silêncio consecutivas suficientes
-    //    OU um período longo de silêncio total
-    if (this.voiceDetected && 
+    // No modo contínuo, respeitar as condições de silêncio para responder durante a conversa
+    if (this.continuousMode && 
+        this.voiceDetected && 
         recordingLength > this.minRecordingDuration && 
         (this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold || 
          elapsedSilence > this.silenceDuration * 1.5)) {
       
-      this.log(`Sufficient silence detected: ${this.consecutiveSilenceCount} samples or ${elapsedSilence}ms > ${this.silenceDuration}ms`);
+      this.log(`Sufficient silence detected in continuous mode: ${this.consecutiveSilenceCount} samples or ${elapsedSilence}ms`);
       this.log(`Recording length: ${recordingLength}ms, minimum: ${this.minRecordingDuration}ms`);
-      this.log(`Notifying silence detected callback`);
       
       // Executar callback de silêncio
       if (this.silenceCallback) {
@@ -319,6 +310,11 @@ class SilenceDetector {
   
   setDebugMode(enabled: boolean): void {
     this.debugMode = enabled;
+  }
+  
+  setContinuousMode(enabled: boolean): void {
+    this.continuousMode = enabled;
+    this.log(`Continuous mode ${enabled ? 'enabled' : 'disabled'}`);
   }
   
   cleanup() {
