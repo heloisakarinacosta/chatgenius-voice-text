@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,14 +21,13 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
 ];
 
-// Valores mais sensíveis para detecção de silêncio
-const SILENCE_THRESHOLD = 1.5; // Reduzido para detectar silêncio mais facilmente
-const MIN_VOICE_LEVEL = 3; // Reduzido para detectar voz mais facilmente
-const MIN_RECORDING_DURATION = 800; // Reduzido para permitir gravações mais curtas
-const VOICE_DETECTION_TIMEOUT = 6000; // Reduzido para acelerar a detecção de voz
+const SILENCE_THRESHOLD = 0.8;
+const MIN_VOICE_LEVEL = 2;
+const MIN_RECORDING_DURATION = 500;
+const VOICE_DETECTION_TIMEOUT = 3000;
 
-// Reduzido para 1 para maior sensibilidade
-const CONSECUTIVE_SILENCE_THRESHOLD = 1;
+const CONSECUTIVE_SILENCE_THRESHOLD = 3;
+const SILENCE_CHECK_INTERVAL = 50;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -66,6 +64,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const forcedStopRef = useRef<boolean>(false);
   const consecutiveSilenceCountRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
+  const silenceStartLoggedRef = useRef<boolean>(false);
   
   const MAX_RETRIES = 3;
 
@@ -78,12 +77,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 1; // Reduzido para 1s (padrão)
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.7;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
-  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.2; // Reduzido para acelerar resposta
+  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.2;
   const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
-  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 1.0; // Reduzido
-  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.3; // Reduzido
+  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 1.0;
+  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.3;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
 
   const SILENCE_DURATION = silenceTimeout * 1000;
@@ -207,6 +206,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       silenceStartRef.current = Date.now();
       voiceDetectedRef.current = false;
       consecutiveSilenceCountRef.current = 0;
+      silenceStartLoggedRef.current = false;
       setAudioLevels(Array(30).fill(0));
       
       if (recordingTimerRef.current) {
@@ -304,14 +304,13 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         clearInterval(silenceDetectionIntervalRef.current);
       }
       
-      // Verificação mais frequente de silêncio (a cada 100ms em vez de 200ms)
       silenceDetectionIntervalRef.current = setInterval(() => {
         if (isRecording && !stoppingRecording && !processingAudioRef.current) {
           checkForSilence();
         }
-      }, 100);
+      }, SILENCE_CHECK_INTERVAL);
       
-      mediaRecorder.start(500);
+      mediaRecorder.start(250);
       setIsRecording(true);
       console.log("Started recording with voice detection");
       
@@ -335,8 +334,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
       
-      analyser.fftSize = 512; 
-      analyser.smoothingTimeConstant = 0.2; // Diminuído para reagir mais rápido
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.1;
       microphone.connect(analyser);
       
       startSilenceDetection();
@@ -355,7 +354,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     const dataArray = new Uint8Array(bufferLength);
     
     const updateVisualization = () => {
-      if (!analyserRef.current) {
+      if (!analyserRef.current || !isRecording) {
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
@@ -380,16 +379,13 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           totalSum += dataArray[j];
         }
         
-        // Amplificar os valores para melhor visualização (multiplicando por 2.5)
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 2.5);
+        levelData[i] = Math.min(1, normalizedValue * 5);
       }
       
-      // Amplificar o nível geral para melhor sensibilidade
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 500);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 800);
       setAudioLevel(overallLevel);
       
-      // Aplicar efeito de onda com animação
       const waveEffectData = levelData.map((level, i) => {
         const now = Date.now() / 1000;
         const modulation = isRecording ? 
@@ -401,7 +397,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       setAudioLevels(waveEffectData);
       
-      // Garantir que a animação continue apenas se estivermos gravando
       if (isRecording) {
         animationFrameRef.current = requestAnimationFrame(updateVisualization);
       } else if (animationFrameRef.current) {
@@ -432,19 +427,21 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       const average = sum / bufferLength;
       
       audioLevelsRef.current.push(average);
-      // Manter apenas os últimos 10 níveis para economia de memória
       if (audioLevelsRef.current.length > 10) {
         audioLevelsRef.current.shift();
       }
       
       const currentTime = Date.now();
       
-      // Log mais frequente dos níveis de áudio para depuração
-      if (audioLevelsRef.current.length % 5 === 0) {
-        console.log(`Níveis de áudio: ${average.toFixed(2)}, voice detected: ${voiceDetectedRef.current}`);
+      if (currentTime % 500 < 50) {
+        console.log(`Current audio level: ${average.toFixed(2)}, voice detected: ${voiceDetectedRef.current}, consecutive silence: ${consecutiveSilenceCountRef.current}`);
       }
       
       if (average > MIN_VOICE_LEVEL) {
+        if (!voiceDetectedRef.current) {
+          console.log(`Voice detected with level: ${average.toFixed(2)}`);
+        }
+        
         voiceDetectedRef.current = true;
         consecutiveSilenceCountRef.current = 0;
         
@@ -454,6 +451,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         silenceStartRef.current = currentTime;
+        silenceStartLoggedRef.current = false;
       }
       
       if (isRecording) {
@@ -461,7 +459,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }
     };
     
-    checkAudioLevel();
+    requestAnimationFrame(checkAudioLevel);
   };
 
   const checkForSilence = () => {
@@ -471,22 +469,31 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     const elapsedSilence = currentTime - silenceStartRef.current;
     const recordingLength = currentTime - recordingStartTimeRef.current;
     
-    const recentAudioLevels = audioLevelsRef.current.slice(-3); // Pegando os 3 níveis mais recentes
+    const recentAudioLevels = audioLevelsRef.current.slice(-2);
     
     const isSilent = recentAudioLevels.length > 0 && 
-                      recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
+                     recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
     
     if (isSilent) {
       consecutiveSilenceCountRef.current += 1;
-      console.log(`Silence detected (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
+      
+      if (!silenceStartLoggedRef.current && consecutiveSilenceCountRef.current > 1) {
+        console.log(`Silence started, elapsed: ${elapsedSilence}ms, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
+        silenceStartLoggedRef.current = true;
+      }
+      
+      if (consecutiveSilenceCountRef.current % 10 === 0) {
+        console.log(`Silence continuing (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms`);
+      }
     } else {
       if (consecutiveSilenceCountRef.current > 0) {
         console.log(`Reset silence counter, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
+        silenceStartLoggedRef.current = false;
       }
       consecutiveSilenceCountRef.current = 0;
+      silenceStartRef.current = currentTime;
     }
     
-    // Verificar se houve voz antes de considerar silêncio para parar
     if (consecutiveSilenceCountRef.current >= CONSECUTIVE_SILENCE_THRESHOLD && 
         voiceDetectedRef.current && 
         recordingLength > MIN_RECORDING_DURATION && 
@@ -495,7 +502,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       console.log(`Sufficient silence detected (${elapsedSilence}ms), stopping recording automatically`);
       console.log(`Recording length: ${recordingLength}ms, min required: ${MIN_RECORDING_DURATION}ms`);
       
-      // Marcar como processando para evitar várias chamadas simultâneas
       processingAudioRef.current = true;
       
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -777,11 +783,10 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             height = 3;
           }
           
-          // Cores diferentes para gravação e reprodução
           const baseColor = 'rgb(var(--primary))';
           const activeColor = isPlaying ? 
-            'rgb(59, 130, 246)' : // Azul para reprodução
-            'rgb(34, 197, 94)';  // Verde para gravação
+            'rgb(59, 130, 246)' : 
+            'rgb(34, 197, 94)';
           
           const color = (isRecording || isPlaying) && level > 0.1 ? 
             activeColor : 

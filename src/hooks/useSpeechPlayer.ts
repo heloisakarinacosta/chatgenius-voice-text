@@ -95,18 +95,23 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
     
     try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyzer = audioContext.createAnalyser();
-      analyzer.fftSize = 256;
+      // Create new AudioContext if necessary
+      if (!audioContextRef.current) {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContext();
+      }
       
-      audioContextRef.current = audioContext;
+      const analyzer = audioContextRef.current.createAnalyser();
+      analyzer.fftSize = 256; // Lower for better performance
+      analyzer.smoothingTimeConstant = 0.5; // Smoother transitions
+      
       analyzerRef.current = analyzer;
       
-      const source = audioContext.createMediaElementSource(audioRef.current);
+      const source = audioContextRef.current.createMediaElementSource(audioRef.current);
       sourceNodeRef.current = source;
       
       source.connect(analyzer);
-      analyzer.connect(audioContext.destination);
+      analyzer.connect(audioContextRef.current.destination);
       
       const bufferLength = analyzer.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
@@ -132,8 +137,9 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
             sum += dataArray[j];
           }
           
+          // Amplify the values for better visualization
           const normalizedValue = (sum / (end - start)) / 256;
-          levelData[i] = normalizedValue;
+          levelData[i] = Math.min(1, normalizedValue * 3); // Amplify by factor of 3, capped at 1
         }
         
         setAudioData(levelData);

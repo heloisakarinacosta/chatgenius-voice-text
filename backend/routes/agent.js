@@ -23,12 +23,12 @@ router.get('/', async (req, res) => {
         voice_id: "nova",
         voice_language: "pt-BR",
         voice_latency: 100,
-        silence_timeout: 1,          // Novo padrão de 1 segundo
+        silence_timeout: 0.7,          // Reduced to 0.7 second for faster response
         max_call_duration: 1800,
-        wait_before_speaking: 0.2,   // Reduzido para resposta mais rápida 
+        wait_before_speaking: 0.2,     
         wait_after_punctuation: 0.1,
-        wait_without_punctuation: 1.0, // Reduzido
-        wait_after_number: 0.3        // Reduzido
+        wait_without_punctuation: 1.0, 
+        wait_after_number: 0.3        
       };
       
       await pool.query(
@@ -76,7 +76,7 @@ router.get('/', async (req, res) => {
           voiceId: config.voice_id,
           language: config.voice_language,
           latency: config.voice_latency,
-          silenceTimeout: config.silence_timeout || 1,
+          silenceTimeout: config.silence_timeout || 0.7, // Default to 0.7 second
           maxCallDuration: config.max_call_duration || 1800,
           waitBeforeSpeaking: config.wait_before_speaking || 0.2,
           waitAfterPunctuation: config.wait_after_punctuation || 0.1,
@@ -138,7 +138,7 @@ router.put('/', async (req, res) => {
         voice.voiceId, 
         voice.language, 
         voice.latency,
-        voice.silenceTimeout || 1,
+        voice.silenceTimeout || 0.7,
         voice.maxCallDuration || 1800,
         voice.waitBeforeSpeaking || 0.2,
         voice.waitAfterPunctuation || 0.1,
