@@ -24,9 +24,10 @@ const VOICES = [
 
 const SILENCE_THRESHOLD = 0.5;
 const MIN_VOICE_LEVEL = 1.0;
-const MIN_RECORDING_DURATION = 400;
-const VOICE_DETECTION_TIMEOUT = 5000;
-const SILENCE_CHECK_INTERVAL = 25;
+const MIN_RECORDING_DURATION = 1000;
+const VOICE_DETECTION_TIMEOUT = 8000;
+const SILENCE_CHECK_INTERVAL = 50;
+const CONSECUTIVE_SILENCE_THRESHOLD = 8;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -56,9 +57,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceDetectionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioLevelsRef = useRef<number[]>([]);
   const forcedStopRef = useRef<boolean>(false);
   const animationFrameRef = useRef<number | null>(null);
+  const silenceStartRef = useRef<number>(0);
+  const consecutiveSilenceCountRef = useRef<number>(0);
+  const silenceStartLoggedRef = useRef<boolean>(false);
+  const voiceDetectedRef = useRef<boolean>(false);
   
   const MAX_RETRIES = 3;
 
@@ -71,12 +77,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.6;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.8;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
-  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.05;
-  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.03;
-  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.2;
-  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.1;
+  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.1;
+  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.05;
+  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.5;
+  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.2;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
 
   const SILENCE_DURATION = silenceTimeout * 1000;
@@ -100,6 +106,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     console.log("Cleaning up voice chat resources");
     
     silenceDetector.cleanup();
+    
+    if (silenceDetectionIntervalRef.current) {
+      clearInterval(silenceDetectionIntervalRef.current);
+      silenceDetectionIntervalRef.current = null;
+    }
     
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -180,15 +191,20 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
-      const microphone = audioContext.createMediaStreamSource(stream);
       
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
       
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.1;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.5;
       
-      microphone.connect(analyser);
+      const highpassFilter = audioContext.createBiquadFilter();
+      highpassFilter.type = "highpass";
+      highpassFilter.frequency.value = 85;
+      
+      const microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(highpassFilter);
+      highpassFilter.connect(analyser);
       
       setAudioLevels(Array(30).fill(0));
       setAudioLevel(0);
@@ -205,7 +221,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         silenceThreshold: SILENCE_THRESHOLD,
         minVoiceLevel: MIN_VOICE_LEVEL,
         silenceDuration: SILENCE_DURATION,
-        minRecordingDuration: MIN_RECORDING_DURATION
+        minRecordingDuration: MIN_RECORDING_DURATION,
+        consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD
       });
       
       console.log("Análise de áudio configurada com sucesso");
@@ -235,6 +252,17 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       analyser.getByteFrequencyData(dataArray);
       
+      let voiceSum = 0;
+      let voiceCount = 0;
+      
+      const startBin = Math.floor(85 / (22050 / (bufferLength * 2))); 
+      const endBin = Math.floor(255 / (22050 / (bufferLength * 2)));
+      
+      for (let i = startBin; i < endBin && i < bufferLength; i++) {
+        voiceSum += dataArray[i];
+        voiceCount++;
+      }
+      
       const levelCount = 30;
       const levelData = Array(levelCount).fill(0);
       
@@ -251,10 +279,10 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 6);
+        levelData[i] = Math.min(1, normalizedValue * 4);
       }
       
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 800);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 700);
       setAudioLevel(overallLevel);
       
       setAudioLevels(levelData);
@@ -288,17 +316,23 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
         } 
       });
       
       streamRef.current = stream;
-      console.log("Microphone access granted");
+      console.log("Microphone access granted with optimal settings");
       
       audioChunksRef.current = [];
       audioLevelsRef.current = [];
       setRecordingDuration(0);
       recordingStartTimeRef.current = Date.now();
+      silenceStartRef.current = Date.now();
+      voiceDetectedRef.current = false;
+      consecutiveSilenceCountRef.current = 0;
+      silenceStartLoggedRef.current = false;
       forcedStopRef.current = false;
       setAudioLevels(Array(30).fill(0));
       
@@ -317,8 +351,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }, 1000);
       
       setupAudioAnalysis(stream);
+      setIsRecording(true);
       
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType: 'audio/webm',
+        audioBitsPerSecond: 128000
+      });
       mediaRecorderRef.current = mediaRecorder;
       
       mediaRecorder.ondataavailable = (event) => {
@@ -387,6 +425,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       voiceDetectionTimerRef.current = setTimeout(() => {
         if (isRecording && !silenceDetector.hasVoiceBeenDetected() && !stoppingRecording) {
           console.log("No voice detected after timeout, stopping recording");
+          toast.info("Nenhuma voz detectada. Por favor, tente novamente falando mais alto.");
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
             stopRecording();
           }
@@ -394,10 +433,28 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       }, VOICE_DETECTION_TIMEOUT);
       
       mediaRecorder.start(250);
-      setIsRecording(true);
-      console.log("Started recording with voice detection");
+      console.log("Started recording with enhanced voice detection");
       
-      toast.info("Gravação iniciada. Fale agora ou clique novamente para parar.");
+      try {
+        const oscillator = audioContextRef.current?.createOscillator();
+        const gainNode = audioContextRef.current?.createGain();
+        
+        if (oscillator && gainNode) {
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(440, audioContextRef.current?.currentTime || 0);
+          gainNode.gain.setValueAtTime(0.1, audioContextRef.current?.currentTime || 0);
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContextRef.current?.destination || gainNode);
+          
+          oscillator.start();
+          oscillator.stop(audioContextRef.current?.currentTime || 0 + 0.2);
+        }
+      } catch (e) {
+        console.error("Error starting oscillator:", e);
+      }
+      
+      toast.success("Gravação iniciada. Fale agora ou clique novamente para parar.");
       
     } catch (error) {
       console.error("Error starting recording:", error);

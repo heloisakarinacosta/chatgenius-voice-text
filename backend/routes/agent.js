@@ -22,13 +22,13 @@ router.get('/', async (req, res) => {
         voice_enabled: true,
         voice_id: "nova",
         voice_language: "pt-BR",
-        voice_latency: 30,          // Reduzido significativamente para menor latência
-        silence_timeout: 0.6,        // Reduzido para detecção ainda mais rápida de silêncio
+        voice_latency: 50,          // Reduzido para menor latência
+        silence_timeout: 0.8,        // Ajustado para melhor detecção de silêncio
         max_call_duration: 1800,
-        wait_before_speaking: 0.05,   // Reduzido para resposta mais imediata
-        wait_after_punctuation: 0.03, // Reduzido para fluidez ainda melhor
-        wait_without_punctuation: 0.2, // Reduzido significativamente para melhor fluidez
-        wait_after_number: 0.1        // Reduzido para melhor fluidez
+        wait_before_speaking: 0.1,   // Reduzido para resposta mais imediata
+        wait_after_punctuation: 0.05, // Reduzido para fluidez
+        wait_without_punctuation: 0.5, // Reduzido para melhor fluidez
+        wait_after_number: 0.2        // Reduzido para melhor fluidez
       };
       
       await pool.query(
@@ -75,13 +75,13 @@ router.get('/', async (req, res) => {
           enabled: Boolean(config.voice_enabled),
           voiceId: config.voice_id,
           language: config.voice_language,
-          latency: config.voice_latency || 30,
-          silenceTimeout: config.silence_timeout || 0.6,
+          latency: config.voice_latency || 50,
+          silenceTimeout: config.silence_timeout || 0.8,
           maxCallDuration: config.max_call_duration || 1800,
-          waitBeforeSpeaking: config.wait_before_speaking || 0.05,
-          waitAfterPunctuation: config.wait_after_punctuation || 0.03,
-          waitWithoutPunctuation: config.wait_without_punctuation || 0.2,
-          waitAfterNumber: config.wait_after_number || 0.1
+          waitBeforeSpeaking: config.wait_before_speaking || 0.1,
+          waitAfterPunctuation: config.wait_after_punctuation || 0.05,
+          waitWithoutPunctuation: config.wait_without_punctuation || 0.5,
+          waitAfterNumber: config.wait_after_number || 0.2
         },
         functions: [],
         trainingFiles: []
