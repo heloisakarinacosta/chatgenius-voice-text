@@ -1,9 +1,10 @@
+
 import * as localDb from './localStorageDb';
 
 // Base URL for the API - Using the configured DEV_API_PORT from process.env
 const DEV_PORT = process.env.DEV_API_PORT || 3030;
 const API_BASE_URL = process.env.NODE_ENV === 'production'
-  ? `http://localhost:3000/api`
+  ? '/api'  // In production, use relative path to avoid CORS issues
   : `http://localhost:${DEV_PORT}/api`;
 
 // Configuration for fetch requests

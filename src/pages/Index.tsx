@@ -26,7 +26,7 @@ const Index = () => {
   // Determine the current API URL based on environment
   const devApiPort = process.env.DEV_API_PORT || 3030;
   const apiBaseUrl = process.env.NODE_ENV === 'production' 
-    ? 'http://191.232.33.131:3000' 
+    ? '' // Use relative URL in production 
     : `http://localhost:${devApiPort}`; 
 
   // Function to fetch API key with retry limits and backoff
