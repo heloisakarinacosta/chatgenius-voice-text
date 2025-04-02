@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,11 +21,12 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
 ];
 
-// Lower threshold for detecting silence (more sensitive)
 const SILENCE_THRESHOLD = 2; 
 const MIN_VOICE_LEVEL = 5;
 const MIN_RECORDING_DURATION = 1500;
 const VOICE_DETECTION_TIMEOUT = 8000;
+
+const CONSECUTIVE_SILENCE_THRESHOLD = 3;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -40,7 +40,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [stoppingRecording, setStoppingRecording] = useState(false);
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(30).fill(0));
-  
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -64,7 +65,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const animationFrameRef = useRef<number | null>(null);
   
   const MAX_RETRIES = 3;
-  const CONSECUTIVE_SILENCE_THRESHOLD = 4;
 
   const { 
     addMessage, 
@@ -75,7 +75,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 5;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 3;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
   const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.4;
   const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
@@ -164,6 +164,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     forcedStopRef.current = false;
     consecutiveSilenceCountRef.current = 0;
     setAudioLevels(Array(30).fill(0));
+    setAudioLevel(0);
     
     console.log("Voice chat resources cleanup completed");
   };
@@ -252,7 +253,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
-        const voiceDetectedInAudio = audioLevelsRef.current.filter(level => level > MIN_VOICE_LEVEL).length > 2;
+        const voiceDetectedInAudio = audioLevelsRef.current.filter(level => level > MIN_VOICE_LEVEL).length > 1;
         
         if (audioBlob.size < 1000 || !apiKey) {
           console.log("Audio too small or API key missing, ignoring");
@@ -270,7 +271,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           return;
         }
         
-        // Always process if user forced stop or voice detected
         if (voiceDetectedInAudio || voiceDetectedRef.current) {
           console.log("Voice detected in recording, processing");
           await processAudioBlob(audioBlob);
@@ -304,7 +304,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         if (isRecording && voiceDetectedRef.current && !stoppingRecording && !processingAudioRef.current) {
           checkForSilence();
         }
-      }, 500);
+      }, 300);
       
       mediaRecorder.start(1000);
       setIsRecording(true);
@@ -330,12 +330,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
       
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 512; 
+      analyser.smoothingTimeConstant = 0.6;
       microphone.connect(analyser);
       
       startSilenceDetection();
-      visualizeAudio(); // Start audio visualization
+      visualizeAudio();
       
     } catch (error) {
       console.error("Error setting up audio analysis:", error);
@@ -350,21 +350,22 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     const dataArray = new Uint8Array(bufferLength);
     
     const updateVisualization = () => {
-      if (!isRecording || !analyserRef.current) {
+      if (!isRecording && !isPlaying) {
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
         }
+        setAudioLevels(prev => prev.map(level => Math.max(0, level * 0.9)));
         return;
       }
       
       analyser.getByteFrequencyData(dataArray);
       
-      // Calculate average levels for visualization
-      const levelCount = 30; // Number of bars in visualization
+      const levelCount = 30;
       const levelData = Array(levelCount).fill(0);
       
-      // Sample the frequency data to create visualization bars
+      let totalSum = 0;
+      
       for (let i = 0; i < levelCount; i++) {
         const start = Math.floor(i * bufferLength / levelCount);
         const end = Math.floor((i + 1) * bufferLength / levelCount);
@@ -372,12 +373,26 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         
         for (let j = start; j < end; j++) {
           sum += dataArray[j];
+          totalSum += dataArray[j];
         }
         
-        levelData[i] = sum / (end - start) / 256; // Normalize to 0-1
+        const normalizedValue = (sum / (end - start)) / 256;
+        levelData[i] = normalizedValue * 1.5;
       }
       
-      setAudioLevels(levelData);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 500);
+      setAudioLevel(overallLevel);
+      
+      const waveEffectData = levelData.map((level, i) => {
+        const now = Date.now() / 1000;
+        const modulation = isPlaying ? 
+          Math.sin(i * 0.2 + now * 5) * 0.15 + 0.3 : 
+          level * (1 + Math.sin(i * 0.5 + now * 3) * 0.2);
+        
+        return isPlaying ? modulation : level;
+      });
+      
+      setAudioLevels(waveEffectData);
       animationFrameRef.current = requestAnimationFrame(updateVisualization);
     };
     
@@ -436,7 +451,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     const elapsedSilence = currentTime - silenceStartRef.current;
     const recordingLength = currentTime - recordingStartTimeRef.current;
     
-    const recentAudioLevels = audioLevelsRef.current.slice(-5);
+    const recentAudioLevels = audioLevelsRef.current.slice(-3);
     
     const isSilent = recentAudioLevels.length > 0 && 
                      recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
@@ -445,10 +460,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       consecutiveSilenceCountRef.current++;
       console.log(`Silence detected (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms`);
     } else {
-      consecutiveSilenceCountRef.current = 0;
+      consecutiveSilenceCountRef.current = Math.max(0, consecutiveSilenceCountRef.current - 0.5);
     }
     
-    // Reduced the threshold needed to trigger silence stop
     if (consecutiveSilenceCountRef.current >= CONSECUTIVE_SILENCE_THRESHOLD && 
         voiceDetectedRef.current && 
         recordingLength > MIN_RECORDING_DURATION && 
@@ -721,22 +735,39 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     setShowSettings(false);
   };
 
-  // Sound wave visualization
   const renderWaveform = () => {
     return (
       <div className="flex items-end justify-center h-12 my-2 gap-[2px]">
         {audioLevels.map((level, index) => {
-          // Apply animation only when recording or speaking
           const animationClass = (isRecording || isPlaying) ? 'transition-all duration-75' : '';
-          const height = isRecording || isPlaying ? Math.max(3, Math.round(level * 40)) : 3;
           
+          let height;
+          if (isPlaying) {
+            height = Math.max(3, Math.round(level * 60));
+          } else if (isRecording) {
+            height = Math.max(3, Math.round(level * 60));
+          } else {
+            height = 3;
+          }
+          
+          const baseColor = 'rgb(var(--primary))';
+          const activeColor = isPlaying ? 
+            'rgb(59, 130, 246)' : 
+            'rgb(34, 197, 94)';
+          
+          const color = (isRecording || isPlaying) && level > 0.1 ? 
+            activeColor : 
+            baseColor;
+            
           return (
             <div
               key={index}
-              className={`w-1 bg-primary ${animationClass} rounded-t`}
+              className={`w-1 rounded-t ${animationClass}`}
               style={{
                 height: `${height}px`,
-                opacity: level > 0.05 ? 0.6 + level * 0.4 : 0.3
+                opacity: level > 0.05 ? 0.6 + level * 0.4 : 0.3,
+                backgroundColor: color,
+                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.2 : 1})`,
               }}
             ></div>
           );
@@ -794,10 +825,11 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         </div>
       </div>
       
-      {/* Audio waveform visualization */}
       <div className="bg-background/60 rounded-md p-2 border border-border">
         <div className="flex items-center gap-2 mb-1">
-          <AudioWaveform className="h-4 w-4 text-muted-foreground" />
+          <AudioWaveform 
+            className={`h-4 w-4 ${isRecording ? 'text-red-500' : isPlaying ? 'text-blue-500' : 'text-muted-foreground'}`} 
+          />
           <span className="text-xs text-muted-foreground">
             {isRecording ? "Gravando..." : isPlaying ? "Reproduzindo..." : "Níveis de áudio"}
           </span>
@@ -823,7 +855,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       
       {isRecording && (
         <div className="text-center text-sm text-muted-foreground animate-pulse">
-          Gravando... Clique no botão para parar
+          Gravando... Clique no botão para parar ou aguarde silêncio
         </div>
       )}
       
