@@ -10,14 +10,14 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     headers: {
-      'Content-Security-Policy': "default-src 'self' http://localhost:* https://*.openai.com https://*.googleapis.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://*.openai.com https://api.openai.com wss://*.googleapis.com https://*.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
+      'Content-Security-Policy': "default-src 'self' http://localhost:* https://*.openai.com https://*.googleapis.com https://*.productfruits.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com https://*.productfruits.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://*.openai.com https://api.openai.com wss://*.googleapis.com https://*.googleapis.com https://*.productfruits.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.productfruits.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://* http://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
     }
   },
   preview: {
     host: "::",
     port: 8080,
     headers: {
-      'Content-Security-Policy': "default-src 'self' http://localhost:* https://*.openai.com https://*.googleapis.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://*.openai.com https://api.openai.com wss://*.googleapis.com https://*.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
+      'Content-Security-Policy': "default-src 'self' http://localhost:* https://*.openai.com https://*.googleapis.com https://*.productfruits.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com https://*.productfruits.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://*.openai.com https://api.openai.com wss://*.googleapis.com https://*.googleapis.com https://*.productfruits.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.productfruits.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://* http://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
     }
   },
   plugins: [
