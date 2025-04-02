@@ -22,12 +22,32 @@ router.get('/', async (req, res) => {
         voice_enabled: true,
         voice_id: "nova",
         voice_language: "pt-BR",
-        voice_latency: 100
+        voice_latency: 100,
+        silence_timeout: 1,          // Novo padrão de 1 segundo
+        max_call_duration: 1800,
+        wait_before_speaking: 0.2,   // Reduzido para resposta mais rápida 
+        wait_after_punctuation: 0.1,
+        wait_without_punctuation: 1.0, // Reduzido
+        wait_after_number: 0.3        // Reduzido
       };
       
       await pool.query(
-        'INSERT INTO agent_config (id, system_prompt, voice_enabled, voice_id, voice_language, voice_latency) VALUES (1, ?, ?, ?, ?, ?)',
-        [defaultConfig.system_prompt, defaultConfig.voice_enabled, defaultConfig.voice_id, defaultConfig.voice_language, defaultConfig.voice_latency]
+        'INSERT INTO agent_config (id, system_prompt, voice_enabled, voice_id, voice_language, voice_latency, ' +
+        'silence_timeout, max_call_duration, wait_before_speaking, wait_after_punctuation, wait_without_punctuation, wait_after_number) ' +
+        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          defaultConfig.system_prompt, 
+          defaultConfig.voice_enabled, 
+          defaultConfig.voice_id, 
+          defaultConfig.voice_language, 
+          defaultConfig.voice_latency,
+          defaultConfig.silence_timeout,
+          defaultConfig.max_call_duration,
+          defaultConfig.wait_before_speaking,
+          defaultConfig.wait_after_punctuation,
+          defaultConfig.wait_without_punctuation,
+          defaultConfig.wait_after_number
+        ]
       );
       
       agentConfig = {
@@ -36,7 +56,13 @@ router.get('/', async (req, res) => {
           enabled: defaultConfig.voice_enabled,
           voiceId: defaultConfig.voice_id,
           language: defaultConfig.voice_language,
-          latency: defaultConfig.voice_latency
+          latency: defaultConfig.voice_latency,
+          silenceTimeout: defaultConfig.silence_timeout,
+          maxCallDuration: defaultConfig.max_call_duration,
+          waitBeforeSpeaking: defaultConfig.wait_before_speaking,
+          waitAfterPunctuation: defaultConfig.wait_after_punctuation,
+          waitWithoutPunctuation: defaultConfig.wait_without_punctuation,
+          waitAfterNumber: defaultConfig.wait_after_number
         },
         functions: [],
         trainingFiles: []
@@ -49,7 +75,13 @@ router.get('/', async (req, res) => {
           enabled: Boolean(config.voice_enabled),
           voiceId: config.voice_id,
           language: config.voice_language,
-          latency: config.voice_latency
+          latency: config.voice_latency,
+          silenceTimeout: config.silence_timeout || 1,
+          maxCallDuration: config.max_call_duration || 1800,
+          waitBeforeSpeaking: config.wait_before_speaking || 0.2,
+          waitAfterPunctuation: config.wait_after_punctuation || 0.1,
+          waitWithoutPunctuation: config.wait_without_punctuation || 1.0,
+          waitAfterNumber: config.wait_after_number || 0.3
         },
         functions: [],
         trainingFiles: []
@@ -93,10 +125,26 @@ router.put('/', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
     
-    // Update basic config
+    // Update basic config with voice settings
     await pool.query(
-      'UPDATE agent_config SET system_prompt = ?, voice_enabled = ?, voice_id = ?, voice_language = ?, voice_latency = ? WHERE id = 1',
-      [systemPrompt, voice.enabled, voice.voiceId, voice.language, voice.latency]
+      'UPDATE agent_config SET ' + 
+      'system_prompt = ?, voice_enabled = ?, voice_id = ?, voice_language = ?, voice_latency = ?, ' +
+      'silence_timeout = ?, max_call_duration = ?, wait_before_speaking = ?, ' +
+      'wait_after_punctuation = ?, wait_without_punctuation = ?, wait_after_number = ? ' +
+      'WHERE id = 1',
+      [
+        systemPrompt, 
+        voice.enabled, 
+        voice.voiceId, 
+        voice.language, 
+        voice.latency,
+        voice.silenceTimeout || 1,
+        voice.maxCallDuration || 1800,
+        voice.waitBeforeSpeaking || 0.2,
+        voice.waitAfterPunctuation || 0.1,
+        voice.waitWithoutPunctuation || 1.0,
+        voice.waitAfterNumber || 0.3
+      ]
     );
     
     // Update functions (remove all and insert again)
