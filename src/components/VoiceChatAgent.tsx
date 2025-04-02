@@ -23,10 +23,10 @@ const VOICES = [
 
 const SILENCE_THRESHOLD = 2; 
 const MIN_VOICE_LEVEL = 5;
-const MIN_RECORDING_DURATION = 1500;
+const MIN_RECORDING_DURATION = 1000; 
 const VOICE_DETECTION_TIMEOUT = 8000;
 
-const CONSECUTIVE_SILENCE_THRESHOLD = 3;
+const CONSECUTIVE_SILENCE_THRESHOLD = 2;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -75,7 +75,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 3;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 2;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
   const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.4;
   const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
@@ -96,6 +96,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     playAudio,
     playStreamingText,
     isPlaying,
+    audioData,
     stopAudio
   } = useSpeechPlayer(agentConfig?.voice?.voiceId || 'alloy');
 
@@ -304,9 +305,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         if (isRecording && voiceDetectedRef.current && !stoppingRecording && !processingAudioRef.current) {
           checkForSilence();
         }
-      }, 300);
+      }, 200);
       
-      mediaRecorder.start(1000);
+      mediaRecorder.start(500);
       setIsRecording(true);
       console.log("Started recording with voice detection");
       
@@ -331,7 +332,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       analyserRef.current = analyser;
       
       analyser.fftSize = 512; 
-      analyser.smoothingTimeConstant = 0.6;
+      analyser.smoothingTimeConstant = 0.3;
       microphone.connect(analyser);
       
       startSilenceDetection();
@@ -377,7 +378,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = normalizedValue * 1.5;
+        levelData[i] = Math.min(1, normalizedValue * 2);
       }
       
       const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 500);
@@ -451,16 +452,16 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     const elapsedSilence = currentTime - silenceStartRef.current;
     const recordingLength = currentTime - recordingStartTimeRef.current;
     
-    const recentAudioLevels = audioLevelsRef.current.slice(-3);
+    const recentAudioLevels = audioLevelsRef.current.slice(-2);
     
     const isSilent = recentAudioLevels.length > 0 && 
                      recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
     
     if (isSilent) {
-      consecutiveSilenceCountRef.current++;
+      consecutiveSilenceCountRef.current += 1;
       console.log(`Silence detected (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms`);
     } else {
-      consecutiveSilenceCountRef.current = Math.max(0, consecutiveSilenceCountRef.current - 0.5);
+      consecutiveSilenceCountRef.current = 0;
     }
     
     if (consecutiveSilenceCountRef.current >= CONSECUTIVE_SILENCE_THRESHOLD && 
@@ -469,6 +470,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         elapsedSilence > SILENCE_DURATION) {
       
       console.log(`Sufficient silence detected (${elapsedSilence}ms), stopping recording`);
+      console.log(`Recording length: ${recordingLength}ms, min required: ${MIN_RECORDING_DURATION}ms`);
       processingAudioRef.current = true;
       
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -743,7 +745,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           
           let height;
           if (isPlaying) {
-            height = Math.max(3, Math.round(level * 60));
+            height = Math.max(3, Math.round((audioData[index] || 0) * 60));
           } else if (isRecording) {
             height = Math.max(3, Math.round(level * 60));
           } else {

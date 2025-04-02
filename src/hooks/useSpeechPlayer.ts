@@ -6,12 +6,15 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const [playbackRate, setPlaybackRate] = useState<number>(1.0);
   const [selectedVoice, setSelectedVoice] = useState<string>(defaultVoice);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [audioData, setAudioData] = useState<number[]>(Array(30).fill(0));
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioQueue = useRef<string[]>([]);
   const isProcessingQueue = useRef<boolean>(false);
   const lastPlayedTextRef = useRef<string>("");
   const textChunksRef = useRef<string[]>([]);
+  const analyzerRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   
   // Effect for applying volume and playback rate changes
   useEffect(() => {
@@ -28,10 +31,12 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       
       audioRef.current.onplay = () => {
         setIsPlaying(true);
+        startAudioVisualization();
       };
       
       audioRef.current.onended = () => {
         setIsPlaying(false);
+        stopAudioVisualization();
         // Process next item in queue
         processQueue();
       };
@@ -39,6 +44,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       audioRef.current.onerror = (e) => {
         console.error("Error playing audio:", e);
         setIsPlaying(false);
+        stopAudioVisualization();
         // Try next item in queue in case of error
         processQueue();
       };
@@ -50,8 +56,75 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         audioRef.current.src = "";
         audioRef.current = null;
       }
+      stopAudioVisualization();
     };
   }, []);
+  
+  const startAudioVisualization = () => {
+    if (!audioRef.current || analyzerRef.current) return;
+    
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const analyzer = audioContext.createAnalyser();
+      analyzer.fftSize = 256;
+      
+      const source = audioContext.createMediaElementSource(audioRef.current);
+      source.connect(analyzer);
+      analyzer.connect(audioContext.destination);
+      
+      analyzerRef.current = analyzer;
+      
+      const bufferLength = analyzer.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const updateAudioData = () => {
+        if (!isPlaying) {
+          stopAudioVisualization();
+          return;
+        }
+        
+        analyzer.getByteFrequencyData(dataArray);
+        
+        // Convert to 30 bars for visualization
+        const levelCount = 30;
+        const levelData = Array(levelCount).fill(0);
+        
+        for (let i = 0; i < levelCount; i++) {
+          const start = Math.floor(i * bufferLength / levelCount);
+          const end = Math.floor((i + 1) * bufferLength / levelCount);
+          let sum = 0;
+          
+          for (let j = start; j < end; j++) {
+            sum += dataArray[j];
+          }
+          
+          const normalizedValue = (sum / (end - start)) / 256;
+          levelData[i] = normalizedValue;
+        }
+        
+        setAudioData(levelData);
+        animationFrameRef.current = requestAnimationFrame(updateAudioData);
+      };
+      
+      animationFrameRef.current = requestAnimationFrame(updateAudioData);
+    } catch (error) {
+      console.error("Error setting up audio visualization:", error);
+    }
+  };
+  
+  const stopAudioVisualization = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    
+    if (analyzerRef.current) {
+      analyzerRef.current = null;
+    }
+    
+    // Fade out the audio visualization
+    setAudioData(prev => prev.map(level => Math.max(0, level * 0.5)));
+  };
   
   // Process audio queue
   const processQueue = async () => {
@@ -71,8 +144,10 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         
         try {
           await audioRef.current.play();
+          startAudioVisualization();
         } catch (error) {
           console.error("Error playing queued audio:", error);
+          stopAudioVisualization();
           // If can't play, try the next item
           isProcessingQueue.current = false;
           processQueue();
@@ -163,6 +238,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       setIsPlaying(false);
+      stopAudioVisualization();
     }
     // Clear queue
     audioQueue.current = [];
@@ -175,6 +251,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     if (audioRef.current) {
       audioRef.current.pause();
       setIsPlaying(false);
+      stopAudioVisualization();
     }
   };
   
@@ -183,6 +260,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     if (audioRef.current && !isPlaying && audioRef.current.src) {
       try {
         await audioRef.current.play();
+        startAudioVisualization();
       } catch (error) {
         console.error("Error resuming audio:", error);
       }
@@ -207,6 +285,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     selectedVoice,
     setSelectedVoice,
     isPlaying,
+    audioData,
     playAudio,
     playStreamingText,
     stopAudio,
