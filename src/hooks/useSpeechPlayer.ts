@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from "react";
 
 export function useSpeechPlayer(defaultVoice: string = "alloy") {
@@ -18,7 +17,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   
-  // Effect for applying volume and playback rate changes
+  // Efeito para aplicar mudanças de volume e taxa de reprodução
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -26,7 +25,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   }, [volume, playbackRate]);
   
-  // Effect to initialize audio ref and clean up on unmount
+  // Efeito para inicializar a referência de áudio e limpar na desmontagem
   useEffect(() => {
     if (!audioRef.current) {
       audioRef.current = new Audio();
@@ -39,7 +38,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       audioRef.current.onended = () => {
         setIsPlaying(false);
         stopAudioVisualization();
-        // Process next item in queue
+        // Processar próximo item na fila
         processQueue();
       };
       
@@ -47,7 +46,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         console.error("Error playing audio:", e);
         setIsPlaying(false);
         stopAudioVisualization();
-        // Try next item in queue in case of error
+        // Tentar próximo item na fila em caso de erro
         processQueue();
       };
     }
@@ -89,21 +88,21 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
   const startAudioVisualization = () => {
     if (!audioRef.current) return;
     
-    // Clean up previous audio context and analyzer before creating new ones
+    // Limpar contexto de áudio e analisador anteriores antes de criar novos
     if (analyzerRef.current || sourceNodeRef.current || audioContextRef.current) {
       stopAudioVisualization();
     }
     
     try {
-      // Create new AudioContext if necessary
+      // Criar novo AudioContext se necessário
       if (!audioContextRef.current) {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         audioContextRef.current = new AudioContext();
       }
       
       const analyzer = audioContextRef.current.createAnalyser();
-      analyzer.fftSize = 256; // Lower for better performance
-      analyzer.smoothingTimeConstant = 0.5; // Smoother transitions
+      analyzer.fftSize = 256; // Menor para melhor desempenho
+      analyzer.smoothingTimeConstant = 0.6; // Aumentado para transições mais suaves (0.5 para 0.6)
       
       analyzerRef.current = analyzer;
       
@@ -124,7 +123,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         
         analyzerRef.current.getByteFrequencyData(dataArray);
         
-        // Convert to 30 bars for visualization
+        // Converter para 30 barras para visualização
         const levelCount = 30;
         const levelData = Array(levelCount).fill(0);
         
@@ -137,9 +136,9 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
             sum += dataArray[j];
           }
           
-          // Amplify the values for better visualization
+          // Amplificar os valores para melhor visualização
           const normalizedValue = (sum / (end - start)) / 256;
-          levelData[i] = Math.min(1, normalizedValue * 3); // Amplify by factor of 3, capped at 1
+          levelData[i] = Math.min(1, normalizedValue * 4); // Amplificado o fator de 3 para 4
         }
         
         setAudioData(levelData);
@@ -167,11 +166,11 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       }
     }
     
-    // Fade out the audio visualization
-    setAudioData(prev => prev.map(level => Math.max(0, level * 0.5)));
+    // Fade out da visualização de áudio menos drástico
+    setAudioData(prev => prev.map(level => Math.max(0, level * 0.7))); // Aumentado de 0.5 para 0.7
   };
   
-  // Process audio queue
+  // Processar audio queue
   const processQueue = async () => {
     if (isProcessingQueue.current || audioQueue.current.length === 0) {
       return;
@@ -191,7 +190,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
           await audioRef.current.play();
         } catch (error) {
           console.error("Error playing queued audio:", error);
-          // If can't play, try the next item
+          // Se não for possível reproduzir, tentar o próximo item
           isProcessingQueue.current = false;
           processQueue();
         }
@@ -201,31 +200,31 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
-  // Function to detect similar text to avoid duplicated audio
+  // Função para detectar texto similar para evitar duplicatas de áudio
   const isDuplicateText = (text: string): boolean => {
     if (!text || text.length < 5) return false;
     
-    // Check if text is very similar to the last played text
+    // Verificar se o texto é muito similar ao último texto reproduzido
     const lastText = lastPlayedTextRef.current;
     if (lastText.includes(text) || text.includes(lastText)) {
       return true;
     }
     
-    // Check if text is contained in any previous chunks
+    // Verificar se o texto está contido em qualquer um dos chunks anteriores
     return textChunksRef.current.some(chunk => 
       chunk.includes(text) || text.includes(chunk)
     );
   };
   
-  // Function to play audio
+  // Função para reproduzir áudio
   const playAudio = (url: string, text?: string) => {
-    // Check if this is a duplicate of the last played text
+    // Verificar se este texto é uma duplicata do último texto reproduzido
     if (text && isDuplicateText(text)) {
       console.log("Skipping duplicate text:", text.substring(0, 30));
       return;
     }
     
-    // If text is provided, update the last played text
+    // Se texto for fornecido, atualizar o último texto reproduzido
     if (text) {
       lastPlayedTextRef.current = text;
       textChunksRef.current.push(text);
@@ -236,29 +235,29 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       }
     }
     
-    // Add to queue
+    // Adicionar à fila
     audioQueue.current.push(url);
     
-    // If not playing, start processing queue
+    // Se não estiver reproduzindo, iniciar processamento da fila
     if (!isPlaying) {
       processQueue();
     }
   };
   
-  // Function to play streaming text
+  // Função para reproduzir texto em streaming
   const playStreamingText = (url: string, text: string, isComplete: boolean = false) => {
-    // Check if this text is a duplicate
+    // Verificar se este texto é uma duplicata
     if (isDuplicateText(text)) {
       console.log("Skipping duplicate streaming text:", text.substring(0, 30));
       return;
     }
     
-    // For streaming, update the last played text only on complete messages
+    // Para streaming, atualizar o último texto reproduzido apenas em mensagens completas
     if (isComplete) {
       lastPlayedTextRef.current = text;
     }
     
-    // Add text to history
+    // Adicionar texto à história
     textChunksRef.current.push(text);
     
     // Manter apenas os últimos 10 chunks para economizar memória
@@ -266,16 +265,16 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       textChunksRef.current.shift();
     }
     
-    // Add to queue
+    // Adicionar à fila
     audioQueue.current.push(url);
     
-    // If not playing, start processing queue
+    // Se não estiver reproduzindo, iniciar processamento da fila
     if (!isPlaying) {
       processQueue();
     }
   };
   
-  // Stop playback
+  // Parar reprodução
   const stopAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -283,13 +282,13 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       setIsPlaying(false);
       stopAudioVisualization();
     }
-    // Clear queue
+    // Limpar fila
     audioQueue.current = [];
     lastPlayedTextRef.current = "";
     textChunksRef.current = [];
   };
   
-  // Pause playback without clearing queue
+  // Pausar reprodução sem limpar a fila
   const pauseAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -298,7 +297,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
     }
   };
   
-  // Resume playback if paused
+  // Retomar reprodução se pausada
   const resumeAudio = async () => {
     if (audioRef.current && !isPlaying && audioRef.current.src) {
       try {
@@ -307,12 +306,12 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
         console.error("Error resuming audio:", error);
       }
     } else if (!isPlaying) {
-      // If nothing is currently loaded but we have items in queue
+      // Se nada estiver carregado mas tem itens na fila
       processQueue();
     }
   };
   
-  // Clear played text history
+  // Limpar história de texto reproduzido
   const clearTextHistory = () => {
     lastPlayedTextRef.current = "";
     textChunksRef.current = [];

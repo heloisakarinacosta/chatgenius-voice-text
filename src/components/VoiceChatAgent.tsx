@@ -22,11 +22,11 @@ const VOICES = [
 ];
 
 const SILENCE_THRESHOLD = 0.8;
-const MIN_VOICE_LEVEL = 2;
+const MIN_VOICE_LEVEL = 1.5;
 const MIN_RECORDING_DURATION = 500;
-const VOICE_DETECTION_TIMEOUT = 3000;
+const VOICE_DETECTION_TIMEOUT = 5000;
 
-const CONSECUTIVE_SILENCE_THRESHOLD = 3;
+const CONSECUTIVE_SILENCE_THRESHOLD = 0;
 const SILENCE_CHECK_INTERVAL = 50;
 
 interface VoiceChatAgentProps {
@@ -178,6 +178,190 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     return cleanupResources;
   }, [apiKey]);
 
+  const setupAudioAnalysis = (stream: MediaStream) => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.1;
+      microphone.connect(analyser);
+      
+      startSilenceDetection();
+      visualizeAudio();
+      
+    } catch (error) {
+      console.error("Error setting up audio analysis:", error);
+    }
+  };
+
+  const visualizeAudio = () => {
+    if (!analyserRef.current || !isRecording) return;
+    
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const updateVisualization = () => {
+      if (!analyserRef.current || !isRecording) {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        return;
+      }
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      const levelCount = 30;
+      const levelData = Array(levelCount).fill(0);
+      
+      let totalSum = 0;
+      
+      for (let i = 0; i < levelCount; i++) {
+        const start = Math.floor(i * bufferLength / levelCount);
+        const end = Math.floor((i + 1) * bufferLength / levelCount);
+        let sum = 0;
+        
+        for (let j = start; j < end; j++) {
+          sum += dataArray[j];
+          totalSum += dataArray[j];
+        }
+        
+        const normalizedValue = (sum / (end - start)) / 256;
+        levelData[i] = Math.min(1, normalizedValue * 8);
+      }
+      
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 1000);
+      setAudioLevel(overallLevel);
+      
+      const waveEffectData = levelData.map((level, i) => {
+        const now = Date.now() / 1000;
+        const modulation = isRecording ? 
+          level * (1 + Math.sin(i * 0.5 + now * 3) * 0.2) : 
+          level;
+        
+        return modulation;
+      });
+      
+      setAudioLevels(waveEffectData);
+      
+      if (isRecording) {
+        animationFrameRef.current = requestAnimationFrame(updateVisualization);
+      } else if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+    
+    animationFrameRef.current = requestAnimationFrame(updateVisualization);
+  };
+
+  const startSilenceDetection = () => {
+    if (!analyserRef.current) return;
+    
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const checkAudioLevel = () => {
+      if (!isRecording || !analyserRef.current) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / bufferLength;
+      
+      audioLevelsRef.current.push(average);
+      if (audioLevelsRef.current.length > 10) {
+        audioLevelsRef.current.shift();
+      }
+      
+      const currentTime = Date.now();
+      
+      if (currentTime % 250 < 50) {
+        console.log(`Current audio level: ${average.toFixed(2)}, voice detected: ${voiceDetectedRef.current}, consecutive silence: ${consecutiveSilenceCountRef.current}`);
+      }
+      
+      if (average > MIN_VOICE_LEVEL) {
+        if (!voiceDetectedRef.current) {
+          console.log(`Voice detected with level: ${average.toFixed(2)}`);
+        }
+        
+        voiceDetectedRef.current = true;
+        consecutiveSilenceCountRef.current = 0;
+        
+        if (voiceDetectionTimerRef.current) {
+          clearTimeout(voiceDetectionTimerRef.current);
+          voiceDetectionTimerRef.current = null;
+        }
+        
+        silenceStartRef.current = currentTime;
+        silenceStartLoggedRef.current = false;
+      }
+      
+      if (isRecording) {
+        requestAnimationFrame(checkAudioLevel);
+      }
+    };
+    
+    requestAnimationFrame(checkAudioLevel);
+  };
+
+  const checkForSilence = () => {
+    if (!analyserRef.current || !isRecording || processingAudioRef.current || stoppingRecording) return;
+    
+    const currentTime = Date.now();
+    const elapsedSilence = currentTime - silenceStartRef.current;
+    const recordingLength = currentTime - recordingStartTimeRef.current;
+    
+    const recentAudioLevels = audioLevelsRef.current.slice(-5);
+    
+    const silentSamples = recentAudioLevels.filter(level => level < SILENCE_THRESHOLD).length;
+    const isSilent = recentAudioLevels.length > 0 && silentSamples >= Math.ceil(recentAudioLevels.length * 0.6);
+    
+    if (isSilent) {
+      consecutiveSilenceCountRef.current += 1;
+      
+      if (!silenceStartLoggedRef.current) {
+        console.log(`Silence detected (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
+        silenceStartLoggedRef.current = true;
+      }
+      
+      if (consecutiveSilenceCountRef.current % 5 === 0) {
+        console.log(`Silence continuing (${consecutiveSilenceCountRef.current}), elapsed: ${elapsedSilence}ms`);
+      }
+    } else {
+      if (consecutiveSilenceCountRef.current > 0) {
+        console.log(`Reset silence counter, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
+        silenceStartLoggedRef.current = false;
+      }
+      consecutiveSilenceCountRef.current = 0;
+      silenceStartRef.current = currentTime;
+    }
+    
+    if (voiceDetectedRef.current && 
+        recordingLength > MIN_RECORDING_DURATION && 
+        elapsedSilence > SILENCE_DURATION) {
+      
+      console.log(`Sufficient silence detected (${elapsedSilence}ms), stopping recording automatically`);
+      console.log(`Recording length: ${recordingLength}ms, min required: ${MIN_RECORDING_DURATION}ms`);
+      
+      processingAudioRef.current = true;
+      
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        stopRecording(false);
+      }
+    }
+  };
+
   const startRecording = async () => {
     if (stoppingRecording || isProcessing) {
       console.log("Cannot start recording while stopping or processing");
@@ -322,191 +506,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         description: "Verifique as permissões do seu navegador."
       });
       setIsRecording(false);
-    }
-  };
-
-  const setupAudioAnalysis = (stream: MediaStream) => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyser = audioContext.createAnalyser();
-      const microphone = audioContext.createMediaStreamSource(stream);
-      
-      audioContextRef.current = audioContext;
-      analyserRef.current = analyser;
-      
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.1;
-      microphone.connect(analyser);
-      
-      startSilenceDetection();
-      visualizeAudio();
-      
-    } catch (error) {
-      console.error("Error setting up audio analysis:", error);
-    }
-  };
-
-  const visualizeAudio = () => {
-    if (!analyserRef.current || !isRecording) return;
-    
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const updateVisualization = () => {
-      if (!analyserRef.current || !isRecording) {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-          animationFrameRef.current = null;
-        }
-        return;
-      }
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      const levelCount = 30;
-      const levelData = Array(levelCount).fill(0);
-      
-      let totalSum = 0;
-      
-      for (let i = 0; i < levelCount; i++) {
-        const start = Math.floor(i * bufferLength / levelCount);
-        const end = Math.floor((i + 1) * bufferLength / levelCount);
-        let sum = 0;
-        
-        for (let j = start; j < end; j++) {
-          sum += dataArray[j];
-          totalSum += dataArray[j];
-        }
-        
-        const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 5);
-      }
-      
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 800);
-      setAudioLevel(overallLevel);
-      
-      const waveEffectData = levelData.map((level, i) => {
-        const now = Date.now() / 1000;
-        const modulation = isRecording ? 
-          level * (1 + Math.sin(i * 0.5 + now * 3) * 0.2) : 
-          level;
-        
-        return modulation;
-      });
-      
-      setAudioLevels(waveEffectData);
-      
-      if (isRecording) {
-        animationFrameRef.current = requestAnimationFrame(updateVisualization);
-      } else if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-    };
-    
-    animationFrameRef.current = requestAnimationFrame(updateVisualization);
-  };
-
-  const startSilenceDetection = () => {
-    if (!analyserRef.current) return;
-    
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const checkAudioLevel = () => {
-      if (!isRecording || !analyserRef.current) return;
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
-      }
-      const average = sum / bufferLength;
-      
-      audioLevelsRef.current.push(average);
-      if (audioLevelsRef.current.length > 10) {
-        audioLevelsRef.current.shift();
-      }
-      
-      const currentTime = Date.now();
-      
-      if (currentTime % 500 < 50) {
-        console.log(`Current audio level: ${average.toFixed(2)}, voice detected: ${voiceDetectedRef.current}, consecutive silence: ${consecutiveSilenceCountRef.current}`);
-      }
-      
-      if (average > MIN_VOICE_LEVEL) {
-        if (!voiceDetectedRef.current) {
-          console.log(`Voice detected with level: ${average.toFixed(2)}`);
-        }
-        
-        voiceDetectedRef.current = true;
-        consecutiveSilenceCountRef.current = 0;
-        
-        if (voiceDetectionTimerRef.current) {
-          clearTimeout(voiceDetectionTimerRef.current);
-          voiceDetectionTimerRef.current = null;
-        }
-        
-        silenceStartRef.current = currentTime;
-        silenceStartLoggedRef.current = false;
-      }
-      
-      if (isRecording) {
-        requestAnimationFrame(checkAudioLevel);
-      }
-    };
-    
-    requestAnimationFrame(checkAudioLevel);
-  };
-
-  const checkForSilence = () => {
-    if (!analyserRef.current || !isRecording || processingAudioRef.current || stoppingRecording) return;
-    
-    const currentTime = Date.now();
-    const elapsedSilence = currentTime - silenceStartRef.current;
-    const recordingLength = currentTime - recordingStartTimeRef.current;
-    
-    const recentAudioLevels = audioLevelsRef.current.slice(-2);
-    
-    const isSilent = recentAudioLevels.length > 0 && 
-                     recentAudioLevels.every(level => level < SILENCE_THRESHOLD);
-    
-    if (isSilent) {
-      consecutiveSilenceCountRef.current += 1;
-      
-      if (!silenceStartLoggedRef.current && consecutiveSilenceCountRef.current > 1) {
-        console.log(`Silence started, elapsed: ${elapsedSilence}ms, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
-        silenceStartLoggedRef.current = true;
-      }
-      
-      if (consecutiveSilenceCountRef.current % 10 === 0) {
-        console.log(`Silence continuing (${consecutiveSilenceCountRef.current}/${CONSECUTIVE_SILENCE_THRESHOLD}), elapsed: ${elapsedSilence}ms`);
-      }
-    } else {
-      if (consecutiveSilenceCountRef.current > 0) {
-        console.log(`Reset silence counter, levels: ${recentAudioLevels.map(l => l.toFixed(1)).join(', ')}`);
-        silenceStartLoggedRef.current = false;
-      }
-      consecutiveSilenceCountRef.current = 0;
-      silenceStartRef.current = currentTime;
-    }
-    
-    if (consecutiveSilenceCountRef.current >= CONSECUTIVE_SILENCE_THRESHOLD && 
-        voiceDetectedRef.current && 
-        recordingLength > MIN_RECORDING_DURATION && 
-        elapsedSilence > SILENCE_DURATION) {
-      
-      console.log(`Sufficient silence detected (${elapsedSilence}ms), stopping recording automatically`);
-      console.log(`Recording length: ${recordingLength}ms, min required: ${MIN_RECORDING_DURATION}ms`);
-      
-      processingAudioRef.current = true;
-      
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        stopRecording(false);
-      }
     }
   };
 
@@ -778,7 +777,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           if (isPlaying) {
             height = Math.max(3, Math.round((audioData[index] || 0) * 60));
           } else if (isRecording) {
-            height = Math.max(3, Math.round(level * 60));
+            height = Math.max(5, Math.round(level * 80));
           } else {
             height = 3;
           }
@@ -788,7 +787,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             'rgb(59, 130, 246)' : 
             'rgb(34, 197, 94)';
           
-          const color = (isRecording || isPlaying) && level > 0.1 ? 
+          const color = (isRecording || isPlaying) && level > 0.05 ? 
             activeColor : 
             baseColor;
             
@@ -798,9 +797,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
               className={`w-1 rounded-t ${animationClass}`}
               style={{
                 height: `${height}px`,
-                opacity: level > 0.05 ? 0.6 + level * 0.4 : 0.3,
+                opacity: level > 0.02 ? 0.7 + level * 0.3 : 0.4,
                 backgroundColor: color,
-                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.2 : 1})`,
+                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.3 : 1})`,
               }}
             ></div>
           );

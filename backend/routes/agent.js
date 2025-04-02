@@ -23,11 +23,11 @@ router.get('/', async (req, res) => {
         voice_id: "nova",
         voice_language: "pt-BR",
         voice_latency: 100,
-        silence_timeout: 0.7,          // Reduced to 0.7 second for faster response
+        silence_timeout: 0.5,          // Reduzido para 0.5 segundo para resposta mais rápida
         max_call_duration: 1800,
         wait_before_speaking: 0.2,     
         wait_after_punctuation: 0.1,
-        wait_without_punctuation: 1.0, 
+        wait_without_punctuation: 0.8, // Reduzido para 0.8 segundo
         wait_after_number: 0.3        
       };
       
@@ -76,11 +76,11 @@ router.get('/', async (req, res) => {
           voiceId: config.voice_id,
           language: config.voice_language,
           latency: config.voice_latency,
-          silenceTimeout: config.silence_timeout || 0.7, // Default to 0.7 second
+          silenceTimeout: config.silence_timeout || 0.5, // Reduzido para 0.5 segundo
           maxCallDuration: config.max_call_duration || 1800,
           waitBeforeSpeaking: config.wait_before_speaking || 0.2,
           waitAfterPunctuation: config.wait_after_punctuation || 0.1,
-          waitWithoutPunctuation: config.wait_without_punctuation || 1.0,
+          waitWithoutPunctuation: config.wait_without_punctuation || 0.8, // Reduzido para 0.8 segundo
           waitAfterNumber: config.wait_after_number || 0.3
         },
         functions: [],
