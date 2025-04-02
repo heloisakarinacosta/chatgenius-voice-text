@@ -23,11 +23,10 @@ const VOICES = [
 ];
 
 const SILENCE_THRESHOLD = 0.5;
-const MIN_VOICE_LEVEL = 1.0;
+const MIN_VOICE_LEVEL = 0.8;
 const MIN_RECORDING_DURATION = 1000;
 const VOICE_DETECTION_TIMEOUT = 8000;
-const SILENCE_CHECK_INTERVAL = 50;
-const CONSECUTIVE_SILENCE_THRESHOLD = 6;
+const CONSECUTIVE_SILENCE_THRESHOLD = 5;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -58,7 +57,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceDetectionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioLevelsRef = useRef<number[]>([]);
   const forcedStopRef = useRef<boolean>(false);
   const animationFrameRef = useRef<number | null>(null);
@@ -85,7 +83,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.5;
   const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.2;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
-  const continuousModeEnabled = agentConfig?.voice?.continuousMode !== undefined ? agentConfig?.voice?.continuousMode : true;
+  const continuousModeEnabled = agentConfig?.voice?.continuousMode !== undefined 
+    ? agentConfig?.voice?.continuousMode 
+    : true;
 
   const SILENCE_DURATION = silenceTimeout * 1000;
 
@@ -128,11 +128,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     console.log("Cleaning up voice chat resources");
     
     silenceDetector.cleanup();
-    
-    if (silenceDetectionIntervalRef.current) {
-      clearInterval(silenceDetectionIntervalRef.current);
-      silenceDetectionIntervalRef.current = null;
-    }
     
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -302,10 +297,10 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 6);
+        levelData[i] = Math.min(1, normalizedValue * 8);
       }
       
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 800);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 1000);
       setAudioLevel(overallLevel);
       
       setAudioLevels(levelData);
@@ -362,10 +357,6 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioLevelsRef.current = [];
       setRecordingDuration(0);
       recordingStartTimeRef.current = Date.now();
-      silenceStartRef.current = Date.now();
-      voiceDetectedRef.current = false;
-      consecutiveSilenceCountRef.current = 0;
-      silenceStartLoggedRef.current = false;
       forcedStopRef.current = false;
       setAudioLevels(Array(30).fill(0));
       
@@ -740,7 +731,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const saveVoiceSettings = (settings: any) => {
     const updatedVoiceConfig = {
       ...agentConfig.voice,
-      ...settings
+      ...settings,
+      continuousMode: settings.continuousMode !== undefined ? settings.continuousMode : continuousModeEnabled
     };
     
     const updatedConfig = {
@@ -751,6 +743,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig(updatedConfig);
     toast.success("Configurações de voz salvas");
     setShowSettings(false);
+    
+    silenceDetector.setContinuousMode(updatedVoiceConfig.continuousMode);
   };
 
   const renderWaveform = () => {
@@ -785,7 +779,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
                 height: `${height}px`,
                 opacity: level > 0.05 ? 0.7 + level * 0.3 : 0.4,
                 backgroundColor: color,
-                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.5 : 1})`,
+                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.7 : 1})`,
               }}
             ></div>
           );
