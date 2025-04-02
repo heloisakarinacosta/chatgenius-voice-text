@@ -1,6 +1,7 @@
 
 /**
  * SilenceDetector - Utilitário para detecção de silêncio em gravações de áudio
+ * Otimizado para compatibilidade entre plataformas
  */
 
 export class SilenceDetector {
@@ -15,14 +16,15 @@ export class SilenceDetector {
   private consecutiveSilenceCount: number = 0;
   private silenceLogged: boolean = false;
   private calibrated: boolean = false;
+  private platformAdjustment: number = 1.0; // Ajuste específico por plataforma
 
   // Configurações
-  private silenceThreshold: number = 0.5; // Nível de silêncio (0-100)
-  private minVoiceLevel: number = 1.0;    // Nível mínimo para considerar como voz
-  private silenceDuration: number = 600;  // Duração do silêncio em ms para considerar como pausa
+  private silenceThreshold: number = 0.5; // Reduzido para ser menos restritivo (0-100)
+  private minVoiceLevel: number = 0.8;    // Reduzido para detectar vozes mais baixas
+  private silenceDuration: number = 800;  // Duração do silêncio em ms para considerar como pausa (ajustado)
   private minRecordingDuration: number = 1000; // Duração mínima da gravação antes de considerar silêncio
   private recordingStartTime: number = 0;
-  private consecutiveSilenceThreshold: number = 8; // Precisamos de N amostras consecutivas de silêncio
+  private consecutiveSilenceThreshold: number = 5; // Precisamos de N amostras consecutivas de silêncio
   
   /**
    * Inicializa o detector de silêncio com um stream de mídia
@@ -50,6 +52,9 @@ export class SilenceDetector {
     this.onSilenceDetected = onSilenceDetected;
     this.calibrated = false;
     
+    // Detectar sistema operacional para ajustes específicos
+    this.detectPlatform();
+    
     // Aplicar configurações personalizadas se fornecidas
     if (config) {
       this.silenceThreshold = config.silenceThreshold ?? this.silenceThreshold;
@@ -64,26 +69,34 @@ export class SilenceDetector {
       this.analyser = this.audioContext.createAnalyser();
       
       // Configurações otimizadas para melhor detecção de fala
-      this.analyser.fftSize = 512; // Aumentado para maior precisão
-      this.analyser.smoothingTimeConstant = 0.5; // Aumentado para suavizar mais as variações
+      this.analyser.fftSize = 1024; // Aumentado para maior precisão em Windows
+      this.analyser.smoothingTimeConstant = 0.5; // Bom valor para suavizar variações
       
       // Adicionar um filtro passa-alta para reduzir ruído de baixa frequência
       const highpassFilter = this.audioContext.createBiquadFilter();
       highpassFilter.type = "highpass";
       highpassFilter.frequency.value = 85; // Hz - reduz ruído de baixa frequência
       
+      // Adicionar filtro passa-baixa para foco na voz (até ~3.5kHz)
+      const lowpassFilter = this.audioContext.createBiquadFilter();
+      lowpassFilter.type = "lowpass";
+      lowpassFilter.frequency.value = 3500; // Hz - atenua frequências acima da voz humana
+      
       const microphone = this.audioContext.createMediaStreamSource(stream);
       
       // Conectar a cadeia de processamento de áudio
       microphone.connect(highpassFilter);
-      highpassFilter.connect(this.analyser);
+      highpassFilter.connect(lowpassFilter);
+      lowpassFilter.connect(this.analyser);
       
       console.log("SilenceDetector initialized with settings:", {
         silenceThreshold: this.silenceThreshold,
         minVoiceLevel: this.minVoiceLevel, 
         silenceDuration: this.silenceDuration,
         minRecordingDuration: this.minRecordingDuration,
-        consecutiveSilenceThreshold: this.consecutiveSilenceThreshold
+        consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
+        platformAdjustment: this.platformAdjustment,
+        fftSize: this.analyser.fftSize
       });
       
       // Iniciar auto-calibração antes do monitoramento
@@ -99,6 +112,31 @@ export class SilenceDetector {
   }
   
   /**
+   * Detecta a plataforma e faz ajustes específicos
+   */
+  private detectPlatform(): void {
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    
+    // Ajustes específicos por plataforma
+    if (userAgent.indexOf('windows') !== -1) {
+      console.log("Windows platform detected, adjusting sensitivity");
+      this.platformAdjustment = 0.8; // Sensibilidade reduzida para Windows
+      this.consecutiveSilenceThreshold += 2; // Mais amostras necessárias no Windows
+    } else if (userAgent.indexOf('mac') !== -1) {
+      console.log("Mac platform detected, using standard settings");
+      this.platformAdjustment = 1.0;
+    } else if (userAgent.indexOf('android') !== -1 || userAgent.indexOf('iphone') !== -1) {
+      console.log("Mobile platform detected, increasing sensitivity");
+      this.platformAdjustment = 1.2; // Sensibilidade aumentada para dispositivos móveis
+      this.consecutiveSilenceThreshold -= 1; // Menos amostras necessárias no mobile
+    }
+    
+    // Ajustar thresholds com base na plataforma
+    this.silenceThreshold *= this.platformAdjustment;
+    this.minVoiceLevel *= this.platformAdjustment;
+  }
+  
+  /**
    * Calibra automaticamente o microfone para se adaptar ao ambiente
    */
   private async calibrateMicrophone(): Promise<void> {
@@ -106,8 +144,8 @@ export class SilenceDetector {
     
     console.log("Iniciando calibração do microfone...");
     
-    // Coletar amostras por 1 segundo
-    const sampleDuration = 1000;
+    // Coletar amostras por 1.5 segundo
+    const sampleDuration = 1500;
     const startTime = Date.now();
     const samples: number[] = [];
     
@@ -123,9 +161,10 @@ export class SilenceDetector {
           let voiceSum = 0;
           let voiceCount = 0;
           
-          // Cálculo aproximado: cada bin representa ~43Hz em fftSize 512
-          const startBin = Math.floor(85 / (22050 / (bufferLength * 2))); 
-          const endBin = Math.floor(255 / (22050 / (bufferLength * 2)));
+          // Cálculo aproximado: cada bin representa frequência baseada no fftSize
+          const binSize = 22050 / (bufferLength * 2);
+          const startBin = Math.floor(85 / binSize); 
+          const endBin = Math.floor(255 / binSize);
           
           // Somar níveis nas frequências de voz humana
           for (let i = startBin; i < endBin && i < bufferLength; i++) {
@@ -140,7 +179,10 @@ export class SilenceDetector {
           }
           
           const average = sum / bufferLength;
-          samples.push(average);
+          const voiceAverage = voiceSum / (voiceCount || 1);
+          const weightedAverage = (voiceAverage * 0.7) + (average * 0.3);
+          
+          samples.push(weightedAverage);
           
           requestAnimationFrame(collectSample);
         } else {
@@ -153,7 +195,11 @@ export class SilenceDetector {
             // Ajustar SILENCE_THRESHOLD para 20% acima do ruído ambiente
             this.silenceThreshold = Math.max(0.3, (percentile75 / 256) * 4 * 1.2);
             // Ajustar MIN_VOICE_LEVEL para 100% acima do ruído ambiente
-            this.minVoiceLevel = Math.max(0.8, (percentile75 / 256) * 4 * 2.0);
+            this.minVoiceLevel = Math.max(0.7, (percentile75 / 256) * 4 * 2.0);
+            
+            // Aplicar ajuste de plataforma após calibração
+            this.silenceThreshold *= this.platformAdjustment;
+            this.minVoiceLevel *= this.platformAdjustment;
             
             console.log(`Calibração concluída: ruído ambiente=${(percentile75 / 256 * 4).toFixed(2)}, ` + 
                         `novo silence threshold=${this.silenceThreshold.toFixed(2)}, ` +
@@ -191,9 +237,10 @@ export class SilenceDetector {
       let voiceSum = 0;
       let voiceCount = 0;
       
-      // Cálculo aproximado: cada bin representa ~43Hz em fftSize 512
-      const startBin = Math.floor(85 / (22050 / (bufferLength * 2))); 
-      const endBin = Math.floor(255 / (22050 / (bufferLength * 2)));
+      // Cálculo baseado no fftSize atual
+      const binSize = 22050 / (bufferLength * 2);
+      const startBin = Math.floor(85 / binSize); 
+      const endBin = Math.floor(255 / binSize);
       
       // Somar apenas as frequências de voz típicas
       for (let i = startBin; i < endBin && i < bufferLength; i++) {
@@ -231,10 +278,30 @@ export class SilenceDetector {
       const recentLevels = this.audioLevels.slice(-5);
       const recentAverage = recentLevels.reduce((sum, val) => sum + val, 0) / (recentLevels.length || 1);
       
-      if (recentAverage > this.minVoiceLevel + 0.2) { // Acima do limiar com margem
+      if (recentAverage > this.minVoiceLevel * 1.1) { // Acima do limiar com margem
         if (!this.voiceDetected) {
           console.log(`Voice detected with level: ${recentAverage.toFixed(2)} (threshold: ${this.minVoiceLevel.toFixed(2)})`);
           this.voiceDetected = true;
+          
+          // Produzir som sutil de feedback se for a primeira detecção de voz
+          try {
+            if (this.audioContext && this.audioLevels.length <= 5) {
+              const oscillator = this.audioContext.createOscillator();
+              const gainNode = this.audioContext.createGain();
+              
+              oscillator.type = 'sine';
+              oscillator.frequency.setValueAtTime(660, this.audioContext.currentTime);
+              gainNode.gain.setValueAtTime(0.03, this.audioContext.currentTime); // Bem baixo
+              
+              oscillator.connect(gainNode);
+              gainNode.connect(this.audioContext.destination);
+              
+              oscillator.start();
+              oscillator.stop(this.audioContext.currentTime + 0.1);
+            }
+          } catch (e) {
+            // Ignorar erros do som de feedback
+          }
         }
         
         this.consecutiveSilenceCount = 0;
