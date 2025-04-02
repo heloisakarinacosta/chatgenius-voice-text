@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [stoppingRecording, setStoppingRecording] = useState(false);
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(30).fill(0));
   const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [isMicrophoneAvailable, setIsMicrophoneAvailable] = useState<boolean | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -101,6 +103,29 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     audioData,
     stopAudio
   } = useSpeechPlayer(agentConfig?.voice?.voiceId || 'alloy');
+
+  // Check for MediaDevices API support
+  useEffect(() => {
+    const checkMicrophoneSupport = async () => {
+      try {
+        // Check if mediaDevices API exists
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+          console.warn('MediaDevices API not supported in this browser');
+          setIsMicrophoneAvailable(false);
+          return;
+        }
+        
+        // Try to access the microphone to check permissions
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        setIsMicrophoneAvailable(true);
+      } catch (error) {
+        console.error('Microphone access denied or not available:', error);
+        setIsMicrophoneAvailable(false);
+      }
+    };
+    
+    checkMicrophoneSupport();
+  }, []);
 
   const cleanupResources = () => {
     console.log("Cleaning up voice chat resources");
@@ -312,6 +337,16 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     
     try {
       console.log("Requesting microphone access...");
+      
+      // Check if mediaDevices API is available
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        console.error("MediaDevices API is not supported in this browser");
+        toast.error("Seu navegador não suporta acesso ao microfone", {
+          description: "Tente usar um navegador mais recente, como Chrome, Firefox, ou Edge."
+        });
+        return;
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -769,7 +804,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             onClick={toggleRecording}
             variant={isRecording ? "destructive" : "default"}
             className={`rounded-full w-12 h-12 p-0 ${isRecording ? 'animate-pulse' : ''}`}
-            disabled={isProcessing || stoppingRecording}
+            disabled={isProcessing || stoppingRecording || isMicrophoneAvailable === false}
             aria-label={isRecording ? "Stop recording" : "Start recording"}
           >
             {isRecording ? (
@@ -856,7 +891,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         </div>
       )}
       
-      {!isRecording && !isProcessing && !stoppingRecording && (
+      {!isRecording && !isProcessing && !stoppingRecording && isMicrophoneAvailable === false && (
+        <div className="text-center text-sm text-red-500">
+          Seu navegador não suporta acesso ao microfone ou o acesso foi negado.
+          Por favor, use um navegador moderno como Chrome, Firefox ou Edge.
+        </div>
+      )}
+      
+      {!isRecording && !isProcessing && !stoppingRecording && isMicrophoneAvailable !== false && (
         <div className="text-center text-sm text-muted-foreground">
           Clique no botão do microfone para iniciar a conversa por voz
         </div>
