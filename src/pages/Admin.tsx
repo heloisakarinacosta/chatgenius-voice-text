@@ -10,6 +10,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+// Obtém a porta da API de desenvolvimento do ambiente
+const DEV_PORT = process.env.DEV_API_PORT || 3030;
+
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,7 +131,7 @@ const Admin = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => window.open('http://localhost:8080/api/health', '_blank')}
+                  onClick={() => window.open(`http://localhost:${DEV_PORT}/api/health`, '_blank')}
                 >
                   Verificar API
                 </Button>

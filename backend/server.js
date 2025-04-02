@@ -17,7 +17,7 @@ const trainingRoutes = require('./routes/training');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEV_PORT = process.env.DEV_PORT || 3030; // Use DEV_PORT from .env
+const DEV_PORT = process.env.DEV_PORT || 3030;
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
@@ -25,7 +25,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Middleware
 app.use(cors({
   origin: [
-    'http://localhost:8080', 
+    `http://localhost:${DEV_PORT}`, 
+    'http://localhost:8080',
     'http://localhost:8081',
     'http://localhost:3000', 
     'https://localhost:3000',

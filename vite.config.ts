@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => ({
   define: {
     'process.env': {
       PORT: process.env.PORT || (mode === 'production' ? 3000 : 8080),
-      DEV_API_PORT: 3030 // Add the development API port to match our backend port
+      DEV_API_PORT: 3030 // Porta da API de desenvolvimento definida aqui
     }
   }
 }));
