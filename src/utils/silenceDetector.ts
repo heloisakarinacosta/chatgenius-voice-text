@@ -25,6 +25,8 @@ export class SilenceDetector {
   private minRecordingDuration: number = 1000; // Duração mínima da gravação antes de considerar silêncio
   private recordingStartTime: number = 0;
   private consecutiveSilenceThreshold: number = 5; // Precisamos de N amostras consecutivas de silêncio
+  private voiceThresholdMultiplier: number = 1.1; // Multiplicador usado para determinar se há voz
+  private continuousModeEnabled: boolean = true; // Enable continuous response during conversation
   
   /**
    * Inicializa o detector de silêncio com um stream de mídia
@@ -38,6 +40,7 @@ export class SilenceDetector {
       silenceDuration?: number;
       minRecordingDuration?: number;
       consecutiveSilenceThreshold?: number;
+      continuousModeEnabled?: boolean;
     }
   ) {
     this.cleanup();
@@ -62,6 +65,7 @@ export class SilenceDetector {
       this.silenceDuration = config.silenceDuration ?? this.silenceDuration;
       this.minRecordingDuration = config.minRecordingDuration ?? this.minRecordingDuration;
       this.consecutiveSilenceThreshold = config.consecutiveSilenceThreshold ?? this.consecutiveSilenceThreshold;
+      this.continuousModeEnabled = config.continuousModeEnabled ?? this.continuousModeEnabled;
     }
     
     try {
@@ -96,6 +100,7 @@ export class SilenceDetector {
         minRecordingDuration: this.minRecordingDuration,
         consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
         platformAdjustment: this.platformAdjustment,
+        continuousModeEnabled: this.continuousModeEnabled,
         fftSize: this.analyser.fftSize
       });
       
@@ -121,14 +126,18 @@ export class SilenceDetector {
     if (userAgent.indexOf('windows') !== -1) {
       console.log("Windows platform detected, adjusting sensitivity");
       this.platformAdjustment = 0.8; // Sensibilidade reduzida para Windows
-      this.consecutiveSilenceThreshold += 2; // Mais amostras necessárias no Windows
+      this.consecutiveSilenceThreshold = 6; // Reduzido de 8 para 6
     } else if (userAgent.indexOf('mac') !== -1) {
       console.log("Mac platform detected, using standard settings");
       this.platformAdjustment = 1.0;
     } else if (userAgent.indexOf('android') !== -1 || userAgent.indexOf('iphone') !== -1) {
       console.log("Mobile platform detected, increasing sensitivity");
       this.platformAdjustment = 1.2; // Sensibilidade aumentada para dispositivos móveis
-      this.consecutiveSilenceThreshold -= 1; // Menos amostras necessárias no mobile
+      this.consecutiveSilenceThreshold = 4; // Reduzido ainda mais para mobile
+    } else if (userAgent.indexOf('linux') !== -1) {
+      console.log("Linux platform detected, adjusting sensitivity");
+      this.platformAdjustment = 0.9;
+      this.consecutiveSilenceThreshold = 5; // Valor intermediário para Linux
     }
     
     // Ajustar thresholds com base na plataforma
@@ -144,8 +153,8 @@ export class SilenceDetector {
     
     console.log("Iniciando calibração do microfone...");
     
-    // Coletar amostras por 1.5 segundo
-    const sampleDuration = 1500;
+    // Coletar amostras por 1 segundo (reduzido para calibração mais rápida)
+    const sampleDuration = 1000;
     const startTime = Date.now();
     const samples: number[] = [];
     
@@ -193,9 +202,10 @@ export class SilenceDetector {
             const percentile75 = sortedSamples[Math.floor(samples.length * 0.75)];
             
             // Ajustar SILENCE_THRESHOLD para 20% acima do ruído ambiente
-            this.silenceThreshold = Math.max(0.3, (percentile75 / 256) * 4 * 1.2);
-            // Ajustar MIN_VOICE_LEVEL para 100% acima do ruído ambiente
-            this.minVoiceLevel = Math.max(0.7, (percentile75 / 256) * 4 * 2.0);
+            this.silenceThreshold = Math.max(0.5, (percentile75 / 256) * 4 * 1.2);
+            
+            // Ajustar MIN_VOICE_LEVEL para 80% acima do ruído ambiente (reduzido de 100% para aumentar sensibilidade)
+            this.minVoiceLevel = Math.max(0.7, (percentile75 / 256) * 4 * 1.8);
             
             // Aplicar ajuste de plataforma após calibração
             this.silenceThreshold *= this.platformAdjustment;
@@ -278,7 +288,8 @@ export class SilenceDetector {
       const recentLevels = this.audioLevels.slice(-5);
       const recentAverage = recentLevels.reduce((sum, val) => sum + val, 0) / (recentLevels.length || 1);
       
-      if (recentAverage > this.minVoiceLevel * 1.1) { // Acima do limiar com margem
+      // Reduzido o theshold para detectar voz mais facilmente
+      if (recentAverage > this.minVoiceLevel * this.voiceThresholdMultiplier) {
         if (!this.voiceDetected) {
           console.log(`Voice detected with level: ${recentAverage.toFixed(2)} (threshold: ${this.minVoiceLevel.toFixed(2)})`);
           this.voiceDetected = true;
@@ -356,14 +367,14 @@ export class SilenceDetector {
       this.silenceStartTime = currentTime;
     }
     
-    // Condição modificada para encerrar gravação:
-    // 1. Voz foi detectada anteriormente
-    // 2. Temos amostras consecutivas suficientes de silêncio
-    // 3. OU temos um longo período de silêncio total
-    if (this.voiceDetected && 
-        (this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold || 
-         silenceDuration > this.silenceDuration * 1.5)) {
-      
+    // Condição modificada para modo contínuo de conversação:
+    // Notifica silêncio apenas se voz foi detectada E:
+    // 1. Temos amostras consecutivas suficientes de silêncio OU
+    // 2. Temos um longo período de silêncio total
+    const silenceThresholdReached = this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold;
+    const longSilenceDetected = silenceDuration > (this.continuousModeEnabled ? this.silenceDuration : this.silenceDuration * 1.5);
+    
+    if (this.voiceDetected && (silenceThresholdReached || longSilenceDetected)) {
       console.log(`SilenceDetector: Sufficient silence detected: ${this.consecutiveSilenceCount} samples or ${silenceDuration}ms > ${this.silenceDuration}ms`);
       this.notifySilenceDetected();
     }
@@ -433,6 +444,20 @@ export class SilenceDetector {
     if (this.audioLevels.length === 0) return 0;
     return this.audioLevels.slice(-5).reduce((sum, level) => sum + level, 0) / 
            Math.min(5, this.audioLevels.length);
+  }
+  
+  /**
+   * Define se o modo contínuo está ativado
+   */
+  public setContinuousMode(enabled: boolean): void {
+    this.continuousModeEnabled = enabled;
+  }
+  
+  /**
+   * Retorna se o modo contínuo está ativado
+   */
+  public isContinuousModeEnabled(): boolean {
+    return this.continuousModeEnabled;
   }
 }
 

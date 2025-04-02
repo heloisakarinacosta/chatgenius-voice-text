@@ -26,7 +26,7 @@ const Index = () => {
   // Determine the current API URL based on environment
   const apiBaseUrl = process.env.NODE_ENV === 'production' 
     ? 'http://191.232.33.131:3000' 
-    : 'http://localhost:8080';
+    : `http://localhost:${process.env.DEV_API_PORT || 3030}`; // Use the DEV_API_PORT env var or fallback to 3030
 
   // Function to fetch API key with retry limits and backoff
   const fetchApiKey = useCallback(async () => {
@@ -35,6 +35,7 @@ const Index = () => {
     try {
       setApiCheckInProgress(true);
       console.log("Tentando buscar chave de API do backend...");
+      console.log("Attempting to connect to backend API at:", apiBaseUrl);
       // Add cache busting to prevent browser caching
       const cacheBuster = new Date().getTime();
       const timeoutPromise = new Promise((_, reject) => 

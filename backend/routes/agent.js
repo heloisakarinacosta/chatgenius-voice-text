@@ -28,13 +28,14 @@ router.get('/', async (req, res) => {
         wait_before_speaking: 0.05,   // Reduzido para resposta mais imediata
         wait_after_punctuation: 0.03, // Reduzido para fluidez
         wait_without_punctuation: 0.2, // Reduzido para melhor fluidez
-        wait_after_number: 0.1        // Reduzido para melhor fluidez
+        wait_after_number: 0.1,        // Reduzido para melhor fluidez
+        continuous_mode: true          // Enable continuous mode by default
       };
       
       await pool.query(
         'INSERT INTO agent_config (id, system_prompt, voice_enabled, voice_id, voice_language, voice_latency, ' +
-        'silence_timeout, max_call_duration, wait_before_speaking, wait_after_punctuation, wait_without_punctuation, wait_after_number) ' +
-        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'silence_timeout, max_call_duration, wait_before_speaking, wait_after_punctuation, wait_without_punctuation, wait_after_number, continuous_mode) ' +
+        'VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           defaultConfig.system_prompt, 
           defaultConfig.voice_enabled, 
@@ -46,7 +47,8 @@ router.get('/', async (req, res) => {
           defaultConfig.wait_before_speaking,
           defaultConfig.wait_after_punctuation,
           defaultConfig.wait_without_punctuation,
-          defaultConfig.wait_after_number
+          defaultConfig.wait_after_number,
+          defaultConfig.continuous_mode
         ]
       );
       
@@ -62,7 +64,8 @@ router.get('/', async (req, res) => {
           waitBeforeSpeaking: defaultConfig.wait_before_speaking,
           waitAfterPunctuation: defaultConfig.wait_after_punctuation,
           waitWithoutPunctuation: defaultConfig.wait_without_punctuation,
-          waitAfterNumber: defaultConfig.wait_after_number
+          waitAfterNumber: defaultConfig.wait_after_number,
+          continuousMode: defaultConfig.continuous_mode
         },
         functions: [],
         trainingFiles: []
@@ -81,7 +84,8 @@ router.get('/', async (req, res) => {
           waitBeforeSpeaking: config.wait_before_speaking || 0.05,
           waitAfterPunctuation: config.wait_after_punctuation || 0.03,
           waitWithoutPunctuation: config.wait_without_punctuation || 0.2,
-          waitAfterNumber: config.wait_after_number || 0.1
+          waitAfterNumber: config.wait_after_number || 0.1,
+          continuousMode: config.continuous_mode !== undefined ? Boolean(config.continuous_mode) : true
         },
         functions: [],
         trainingFiles: []
@@ -111,7 +115,7 @@ router.get('/', async (req, res) => {
     // Add platform detection info for client-side optimizations
     agentConfig.platformInfo = {
       isOptimized: true,
-      version: "1.2.0"
+      version: "1.2.1"  // Incrementing version for tracking changes
     };
     
     // Add additional debug info to help troubleshoot voice issues
@@ -147,7 +151,7 @@ router.put('/', async (req, res) => {
       'UPDATE agent_config SET ' + 
       'system_prompt = ?, voice_enabled = ?, voice_id = ?, voice_language = ?, voice_latency = ?, ' +
       'silence_timeout = ?, max_call_duration = ?, wait_before_speaking = ?, ' +
-      'wait_after_punctuation = ?, wait_without_punctuation = ?, wait_after_number = ? ' +
+      'wait_after_punctuation = ?, wait_without_punctuation = ?, wait_after_number = ?, continuous_mode = ? ' +
       'WHERE id = 1',
       [
         systemPrompt, 
@@ -160,7 +164,8 @@ router.put('/', async (req, res) => {
         voice.waitBeforeSpeaking || 0.05,
         voice.waitAfterPunctuation || 0.03,
         voice.waitWithoutPunctuation || 0.2,
-        voice.waitAfterNumber || 0.1
+        voice.waitAfterNumber || 0.1,
+        voice.continuousMode !== undefined ? voice.continuousMode : true
       ]
     );
     

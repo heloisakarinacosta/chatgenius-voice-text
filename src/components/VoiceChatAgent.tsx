@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +27,7 @@ const MIN_VOICE_LEVEL = 1.0;
 const MIN_RECORDING_DURATION = 1000;
 const VOICE_DETECTION_TIMEOUT = 8000;
 const SILENCE_CHECK_INTERVAL = 50;
-const CONSECUTIVE_SILENCE_THRESHOLD = 8;
+const CONSECUTIVE_SILENCE_THRESHOLD = 6;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -86,6 +85,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.5;
   const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.2;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
+  const continuousModeEnabled = agentConfig?.voice?.continuousMode !== undefined ? agentConfig?.voice?.continuousMode : true;
 
   const SILENCE_DURATION = silenceTimeout * 1000;
 
@@ -104,18 +104,15 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     stopAudio
   } = useSpeechPlayer(agentConfig?.voice?.voiceId || 'alloy');
 
-  // Check for MediaDevices API support
   useEffect(() => {
     const checkMicrophoneSupport = async () => {
       try {
-        // Check if mediaDevices API exists
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
           console.warn('MediaDevices API not supported in this browser');
           setIsMicrophoneAvailable(false);
           return;
         }
         
-        // Try to access the microphone to check permissions
         await navigator.mediaDevices.getUserMedia({ audio: true });
         setIsMicrophoneAvailable(true);
       } catch (error) {
@@ -220,8 +217,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
       
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.5;
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.4;
       
       const highpassFilter = audioContext.createBiquadFilter();
       highpassFilter.type = "highpass";
@@ -247,7 +244,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         minVoiceLevel: MIN_VOICE_LEVEL,
         silenceDuration: SILENCE_DURATION,
         minRecordingDuration: MIN_RECORDING_DURATION,
-        consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD
+        consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD,
+        continuousModeEnabled: continuousModeEnabled
       });
       
       console.log("Análise de áudio configurada com sucesso");
@@ -304,10 +302,10 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 4);
+        levelData[i] = Math.min(1, normalizedValue * 6);
       }
       
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 700);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 800);
       setAudioLevel(overallLevel);
       
       setAudioLevels(levelData);
@@ -338,12 +336,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     try {
       console.log("Requesting microphone access...");
       
-      // Check if mediaDevices API is available
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        console.error("MediaDevices API is not supported in this browser");
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        console.error("MediaDevices API is not supported in this browser or environment");
         toast.error("Seu navegador não suporta acesso ao microfone", {
           description: "Tente usar um navegador mais recente, como Chrome, Firefox, ou Edge."
         });
+        setIsMicrophoneAvailable(false);
         return;
       }
       
@@ -866,7 +864,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
             waitAfterPunctuation,
             waitWithoutPunctuation,
             waitAfterNumber,
-            endCallMessage
+            endCallMessage,
+            continuousMode: continuousModeEnabled
           }}
           onSave={saveVoiceSettings}
           onCancel={() => setShowSettings(false)}

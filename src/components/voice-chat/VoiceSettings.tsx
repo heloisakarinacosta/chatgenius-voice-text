@@ -20,6 +20,7 @@ interface VoiceSettingsProps {
     waitWithoutPunctuation: number;
     waitAfterNumber: number;
     endCallMessage: string;
+    continuousMode?: boolean;
   };
   onSave: (settings: any) => void;
   onCancel: () => void;
@@ -30,7 +31,10 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
   onSave,
   onCancel
 }) => {
-  const [formValues, setFormValues] = useState(settings);
+  const [formValues, setFormValues] = useState({
+    ...settings,
+    continuousMode: settings.continuousMode !== undefined ? settings.continuousMode : true
+  });
   const { toast } = useToast();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -45,6 +49,13 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
     setFormValues((prev) => ({
       ...prev,
       [name]: values[0]
+    }));
+  };
+
+  const handleSwitchChange = (name: string) => (checked: boolean) => {
+    setFormValues((prev) => ({
+      ...prev,
+      [name]: checked
     }));
   };
 
@@ -67,6 +78,34 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
             <div className="space-y-4">
               <h3 className="font-medium text-sm">Comportamento de Resposta</h3>
               <div className="space-y-3">
+                <div className="flex items-center justify-between space-x-2">
+                  <Label htmlFor="continuousMode" className="flex-grow">Modo Contínuo</Label>
+                  <Switch
+                    id="continuousMode"
+                    checked={formValues.continuousMode}
+                    onCheckedChange={handleSwitchChange("continuousMode")}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Quando ativado, o assistente responde durante pausas na sua fala
+                </p>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="silenceTimeout">Tempo de silêncio (s)</Label>
+                    <span className="text-xs text-muted-foreground">{formValues.silenceTimeout.toFixed(1)}s</span>
+                  </div>
+                  <Slider
+                    id="silenceTimeout"
+                    min={0.2}
+                    max={2}
+                    step={0.1}
+                    value={[formValues.silenceTimeout]}
+                    onValueChange={handleSliderChange("silenceTimeout")}
+                  />
+                  <p className="text-xs text-muted-foreground">Tempo de silêncio necessário para considerar uma pausa</p>
+                </div>
+                
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <Label htmlFor="waitBeforeSpeaking">Espera antes de falar</Label>
@@ -128,74 +167,53 @@ export const VoiceSettings: React.FC<VoiceSettingsProps> = ({
                     value={[formValues.waitAfterNumber]}
                     onValueChange={handleSliderChange("waitAfterNumber")}
                   />
-                  <p className="text-xs text-muted-foreground">Tempo mínimo de espera após transcrição terminando com números</p>
+                  <p className="text-xs text-muted-foreground">Tempo de espera após transcrição contendo números</p>
                 </div>
               </div>
-            </div>
-            
-            <div className="space-y-4 pt-2">
-              <h3 className="font-medium text-sm">Configurações de Tempo Limite</h3>
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="silenceTimeout">Tempo limite de silêncio</Label>
-                    <span className="text-xs text-muted-foreground">{formValues.silenceTimeout}s</span>
-                  </div>
-                  <Slider
-                    id="silenceTimeout"
-                    min={1}
-                    max={30}
-                    step={1}
-                    value={[formValues.silenceTimeout]}
-                    onValueChange={handleSliderChange("silenceTimeout")}
-                  />
-                  <p className="text-xs text-muted-foreground">Tempo de espera antes de encerrar a chamada por inatividade</p>
+              
+              <Separator className="my-4" />
+              
+              <h3 className="font-medium text-sm">Limite de Tempo</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="maxCallDuration">Duração máxima (minutos)</Label>
+                  <span className="text-xs text-muted-foreground">{Math.round(formValues.maxCallDuration / 60)} min</span>
                 </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="maxCallDuration">Duração máxima da chamada</Label>
-                    <span className="text-xs text-muted-foreground">{Math.floor(formValues.maxCallDuration / 60)}min {formValues.maxCallDuration % 60}s</span>
-                  </div>
-                  <Slider
-                    id="maxCallDuration"
-                    min={60}
-                    max={3600}
-                    step={60}
-                    value={[formValues.maxCallDuration]}
-                    onValueChange={handleSliderChange("maxCallDuration")}
-                  />
-                  <p className="text-xs text-muted-foreground">Tempo máximo que uma chamada pode durar</p>
-                </div>
+                <Slider
+                  id="maxCallDuration"
+                  min={300}
+                  max={3600}
+                  step={60}
+                  value={[formValues.maxCallDuration]}
+                  onValueChange={handleSliderChange("maxCallDuration")}
+                />
+                <p className="text-xs text-muted-foreground">Duração máxima da conversa antes de ser encerrada automaticamente</p>
               </div>
-            </div>
-            
-            <div className="space-y-2 pt-2">
-              <Label htmlFor="endCallMessage">Mensagem de encerramento</Label>
-              <Textarea
-                id="endCallMessage"
-                name="endCallMessage"
-                value={formValues.endCallMessage}
-                onChange={handleChange}
-                rows={2}
-              />
-              <p className="text-xs text-muted-foreground">Mensagem falada ao encerrar a chamada por inatividade</p>
+              
+              <div className="space-y-2 pt-2">
+                <Label htmlFor="endCallMessage">Mensagem de encerramento</Label>
+                <Textarea
+                  id="endCallMessage"
+                  name="endCallMessage"
+                  value={formValues.endCallMessage}
+                  onChange={handleChange}
+                  rows={2}
+                  className="resize-none"
+                  placeholder="Mensagem exibida quando a chamada é encerrada automaticamente"
+                />
+              </div>
             </div>
           </CardContent>
           <CardFooter className="flex justify-between">
-            <Button type="button" variant="outline" onClick={onCancel}>
+            <Button variant="outline" type="button" onClick={onCancel}>
               Cancelar
             </Button>
-            <Button type="submit">
-              Salvar Configurações
-            </Button>
+            <Button type="submit">Salvar configurações</Button>
           </CardFooter>
         </form>
       </Card>
-      
-      <Separator />
-      
-      <RagSettings />
     </div>
   );
 };
+
+export default VoiceSettings;

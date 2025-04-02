@@ -17,7 +17,7 @@ const trainingRoutes = require('./routes/training');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEV_PORT = 8080;
+const DEV_PORT = 3030; // Changed from 8080 to 3030 to avoid conflict with frontend Vite
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
@@ -26,6 +26,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(cors({
   origin: [
     'http://localhost:8080', 
+    'http://localhost:8081',
     'http://localhost:3000', 
     'https://localhost:3000',
     'http://191.232.33.131:3000',
