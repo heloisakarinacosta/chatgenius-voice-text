@@ -22,13 +22,13 @@ router.get('/', async (req, res) => {
         voice_enabled: true,
         voice_id: "nova",
         voice_language: "pt-BR",
-        voice_latency: 100,
-        silence_timeout: 0.5,          // Reduzido para 0.5 segundo para resposta mais rápida
+        voice_latency: 50,          // Reduzido de 100 para 50ms para menor latência
+        silence_timeout: 0.8,        // Reduzido para detecção mais rápida de silêncio
         max_call_duration: 1800,
-        wait_before_speaking: 0.2,     
-        wait_after_punctuation: 0.1,
-        wait_without_punctuation: 0.8, // Reduzido para 0.8 segundo
-        wait_after_number: 0.3        
+        wait_before_speaking: 0.1,   // Reduzido para resposta ainda mais rápida
+        wait_after_punctuation: 0.05, // Reduzido para melhor fluidez
+        wait_without_punctuation: 0.5, // Reduzido significativamente
+        wait_after_number: 0.2        // Reduzido para melhor fluidez
       };
       
       await pool.query(
@@ -75,13 +75,13 @@ router.get('/', async (req, res) => {
           enabled: Boolean(config.voice_enabled),
           voiceId: config.voice_id,
           language: config.voice_language,
-          latency: config.voice_latency,
-          silenceTimeout: config.silence_timeout || 0.5, // Reduzido para 0.5 segundo
+          latency: config.voice_latency || 50, // Reduzido para 50ms
+          silenceTimeout: config.silence_timeout || 0.8, // Reduzido para 0.8 segundo
           maxCallDuration: config.max_call_duration || 1800,
-          waitBeforeSpeaking: config.wait_before_speaking || 0.2,
-          waitAfterPunctuation: config.wait_after_punctuation || 0.1,
-          waitWithoutPunctuation: config.wait_without_punctuation || 0.8, // Reduzido para 0.8 segundo
-          waitAfterNumber: config.wait_after_number || 0.3
+          waitBeforeSpeaking: config.wait_before_speaking || 0.1, // Reduzido para 0.1
+          waitAfterPunctuation: config.wait_after_punctuation || 0.05, // Reduzido para 0.05
+          waitWithoutPunctuation: config.wait_without_punctuation || 0.5, // Reduzido para 0.5 segundo
+          waitAfterNumber: config.wait_after_number || 0.2 // Reduzido para 0.2
         },
         functions: [],
         trainingFiles: []
@@ -138,12 +138,12 @@ router.put('/', async (req, res) => {
         voice.voiceId, 
         voice.language, 
         voice.latency,
-        voice.silenceTimeout || 0.7,
+        voice.silenceTimeout || 0.8,
         voice.maxCallDuration || 1800,
-        voice.waitBeforeSpeaking || 0.2,
-        voice.waitAfterPunctuation || 0.1,
-        voice.waitWithoutPunctuation || 1.0,
-        voice.waitAfterNumber || 0.3
+        voice.waitBeforeSpeaking || 0.1,
+        voice.waitAfterPunctuation || 0.05,
+        voice.waitWithoutPunctuation || 0.5,
+        voice.waitAfterNumber || 0.2
       ]
     );
     

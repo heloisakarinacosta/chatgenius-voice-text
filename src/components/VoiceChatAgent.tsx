@@ -77,12 +77,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.7;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.8;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
-  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.2;
-  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.1;
-  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 1.0;
-  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.3;
+  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.1;
+  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.05;
+  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.5;
+  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.2;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
 
   const SILENCE_DURATION = silenceTimeout * 1000;
@@ -180,6 +180,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
 
   const setupAudioAnalysis = (stream: MediaStream) => {
     try {
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (e) {
+          console.error("Erro ao fechar contexto de áudio anterior:", e);
+        }
+      }
+      
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
@@ -191,16 +199,23 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       analyser.smoothingTimeConstant = 0.1;
       microphone.connect(analyser);
       
-      startSilenceDetection();
-      visualizeAudio();
+      setAudioLevels(Array(30).fill(0));
+      setAudioLevel(0);
       
+      visualizeAudio();
+      startSilenceDetection();
+      
+      console.log("Análise de áudio configurada com sucesso");
     } catch (error) {
-      console.error("Error setting up audio analysis:", error);
+      console.error("Erro ao configurar análise de áudio:", error);
     }
   };
 
   const visualizeAudio = () => {
-    if (!analyserRef.current || !isRecording) return;
+    if (!analyserRef.current) {
+      console.log("Analisador não está disponível para visualização");
+      return;
+    }
     
     const analyser = analyserRef.current;
     const bufferLength = analyser.frequencyBinCount;
@@ -233,31 +248,26 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
         
         const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 8);
+        levelData[i] = Math.min(1, normalizedValue * 4);
       }
       
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 1000);
+      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 700);
       setAudioLevel(overallLevel);
       
-      const waveEffectData = levelData.map((level, i) => {
-        const now = Date.now() / 1000;
-        const modulation = isRecording ? 
-          level * (1 + Math.sin(i * 0.5 + now * 3) * 0.2) : 
-          level;
-        
-        return modulation;
-      });
+      setAudioLevels(levelData);
       
-      setAudioLevels(waveEffectData);
+      if (Math.random() < 0.05) {
+        console.log(`Níveis de áudio: média=${(overallLevel).toFixed(2)}, max=${Math.max(...levelData).toFixed(2)}`);
+      }
       
       if (isRecording) {
         animationFrameRef.current = requestAnimationFrame(updateVisualization);
-      } else if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
       }
     };
     
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
     animationFrameRef.current = requestAnimationFrame(updateVisualization);
   };
 
@@ -771,24 +781,24 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     return (
       <div className="flex items-end justify-center h-12 my-2 gap-[2px]">
         {audioLevels.map((level, index) => {
-          const animationClass = (isRecording || isPlaying) ? 'transition-all duration-75' : '';
+          const animationClass = (isRecording || isPlaying) ? 'transition-all duration-50' : '';
           
           let height;
           if (isPlaying) {
-            height = Math.max(3, Math.round((audioData[index] || 0) * 60));
+            height = Math.max(4, Math.round((audioData[index] || 0) * 60));
           } else if (isRecording) {
-            height = Math.max(5, Math.round(level * 80));
+            height = Math.max(4, Math.round(level * 60));
           } else {
-            height = 3;
+            height = 4;
           }
           
           const baseColor = 'rgb(var(--primary))';
           const activeColor = isPlaying ? 
             'rgb(59, 130, 246)' : 
-            'rgb(34, 197, 94)';
+            'rgb(22, 163, 74)';
           
-          const color = (isRecording || isPlaying) && level > 0.05 ? 
-            activeColor : 
+          const color = (isRecording || isPlaying) ? 
+            (level > 0.05 ? activeColor : baseColor) : 
             baseColor;
             
           return (
@@ -797,9 +807,9 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
               className={`w-1 rounded-t ${animationClass}`}
               style={{
                 height: `${height}px`,
-                opacity: level > 0.02 ? 0.7 + level * 0.3 : 0.4,
+                opacity: level > 0.05 ? 0.7 + level * 0.3 : 0.4,
                 backgroundColor: color,
-                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.3 : 1})`,
+                transform: `scaleY(${isRecording || isPlaying ? 1 + level * 0.5 : 1})`,
               }}
             ></div>
           );
