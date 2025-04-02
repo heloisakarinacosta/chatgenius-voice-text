@@ -114,6 +114,17 @@ router.get('/', async (req, res) => {
       version: "1.2.0"
     };
     
+    // Add additional debug info to help troubleshoot voice issues
+    agentConfig.debug = {
+      serverTime: new Date().toISOString(),
+      dbConnected: db.isConnected(),
+      audioSettings: {
+        recommendedSampleRate: 16000,
+        recommendedChannels: 1,
+        recommendedBitRate: 128000
+      }
+    };
+    
     res.json(agentConfig);
   } catch (error) {
     console.error('Error fetching agent config:', error);
