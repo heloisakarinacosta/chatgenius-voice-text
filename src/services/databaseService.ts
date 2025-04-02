@@ -1,7 +1,10 @@
 import * as localDb from './localStorageDb';
 
-// Base URL for the API
-const API_BASE_URL = `http://localhost:${process.env.PORT || 8080}/api`;
+// Base URL for the API - Using the configured DEV_API_PORT from process.env
+const DEV_PORT = process.env.DEV_API_PORT || 3030;
+const API_BASE_URL = process.env.NODE_ENV === 'production'
+  ? `http://localhost:3000/api`
+  : `http://localhost:${DEV_PORT}/api`;
 
 // Configuration for fetch requests
 const FETCH_TIMEOUT = 3000; // 3 seconds timeout

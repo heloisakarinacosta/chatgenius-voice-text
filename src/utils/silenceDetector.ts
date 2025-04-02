@@ -1,465 +1,357 @@
 
-/**
- * SilenceDetector - Utilitário para detecção de silêncio em gravações de áudio
- * Otimizado para compatibilidade entre plataformas
- */
+// src/utils/silenceDetector.ts
 
-export class SilenceDetector {
-  private analyser: AnalyserNode | null = null;
+interface SilenceDetectorConfig {
+  silenceThreshold: number;
+  minVoiceLevel: number;
+  silenceDuration: number;
+  minRecordingDuration: number;
+  consecutiveSilenceThreshold: number;
+}
+
+class SilenceDetector {
   private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private dataArray: Uint8Array | null = null;
+  private stream: MediaStream | null = null;
   private audioLevels: number[] = [];
-  private silenceStartTime: number = 0;
   private voiceDetected: boolean = false;
-  private onSilenceDetected: (() => void) | null = null;
-  private animationFrame: number | null = null;
-  private isActive: boolean = false;
   private consecutiveSilenceCount: number = 0;
-  private silenceLogged: boolean = false;
-  private calibrated: boolean = false;
-  private platformAdjustment: number = 1.0; // Ajuste específico por plataforma
-
-  // Configurações
-  private silenceThreshold: number = 0.5; // Reduzido para ser menos restritivo (0-100)
-  private minVoiceLevel: number = 0.8;    // Reduzido para detectar vozes mais baixas
-  private silenceDuration: number = 800;  // Duração do silêncio em ms para considerar como pausa (ajustado)
-  private minRecordingDuration: number = 1000; // Duração mínima da gravação antes de considerar silêncio
+  private silenceStartTime: number = 0;
   private recordingStartTime: number = 0;
-  private consecutiveSilenceThreshold: number = 5; // Precisamos de N amostras consecutivas de silêncio
-  private voiceThresholdMultiplier: number = 1.1; // Multiplicador usado para determinar se há voz
-  private continuousModeEnabled: boolean = true; // Enable continuous response during conversation
+  private animationFrameId: number | null = null;
+  private silenceCallback: (() => void) | null = null;
+  private checkSilenceIntervalId: number | null = null;
   
-  /**
-   * Inicializa o detector de silêncio com um stream de mídia
-   */
-  public initialize(
+  // Configurações
+  private silenceThreshold: number = 0.5;
+  private minVoiceLevel: number = 1.0;
+  private silenceDuration: number = 800;
+  private minRecordingDuration: number = 1000;
+  private consecutiveSilenceThreshold: number = 8;
+  
+  private initialized: boolean = false;
+  private debugMode: boolean = true;
+  private continuousMode: boolean = true;
+  
+  initialize(
     stream: MediaStream, 
-    onSilenceDetected: () => void, 
-    config?: {
-      silenceThreshold?: number;
-      minVoiceLevel?: number;
-      silenceDuration?: number;
-      minRecordingDuration?: number;
-      consecutiveSilenceThreshold?: number;
-      continuousModeEnabled?: boolean;
-    }
+    silenceCallback: () => void, 
+    config?: Partial<SilenceDetectorConfig>
   ) {
+    // Limpar recursos anteriores se existirem
     this.cleanup();
     
-    this.recordingStartTime = Date.now();
-    this.silenceStartTime = Date.now();
-    this.voiceDetected = false;
-    this.isActive = true;
-    this.audioLevels = [];
-    this.consecutiveSilenceCount = 0;
-    this.silenceLogged = false;
-    this.onSilenceDetected = onSilenceDetected;
-    this.calibrated = false;
-    
-    // Detectar sistema operacional para ajustes específicos
-    this.detectPlatform();
-    
-    // Aplicar configurações personalizadas se fornecidas
     if (config) {
       this.silenceThreshold = config.silenceThreshold ?? this.silenceThreshold;
       this.minVoiceLevel = config.minVoiceLevel ?? this.minVoiceLevel;
       this.silenceDuration = config.silenceDuration ?? this.silenceDuration;
       this.minRecordingDuration = config.minRecordingDuration ?? this.minRecordingDuration;
       this.consecutiveSilenceThreshold = config.consecutiveSilenceThreshold ?? this.consecutiveSilenceThreshold;
-      this.continuousModeEnabled = config.continuousModeEnabled ?? this.continuousModeEnabled;
     }
     
+    this.stream = stream;
+    this.silenceCallback = silenceCallback;
+    this.recordingStartTime = Date.now();
+    this.silenceStartTime = Date.now();
+    this.audioLevels = [];
+    this.voiceDetected = false;
+    this.consecutiveSilenceCount = 0;
+    
+    this.setupAudioAnalysis();
+    this.startSilenceDetection();
+    
+    this.initialized = true;
+    
+    this.log("SilenceDetector initialized with config:", {
+      silenceThreshold: this.silenceThreshold,
+      minVoiceLevel: this.minVoiceLevel,
+      silenceDuration: this.silenceDuration,
+      minRecordingDuration: this.minRecordingDuration,
+      consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
+      continuousMode: this.continuousMode
+    });
+  }
+  
+  setContinuousMode(enabled: boolean) {
+    this.continuousMode = enabled;
+    this.log(`Continuous mode ${enabled ? 'enabled' : 'disabled'}`);
+  }
+  
+  private log(...args: any[]) {
+    if (this.debugMode) {
+      console.log("[SilenceDetector]", ...args);
+    }
+  }
+  
+  private setupAudioAnalysis() {
     try {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.analyser = this.audioContext.createAnalyser();
       
-      // Configurações otimizadas para melhor detecção de fala
-      this.analyser.fftSize = 1024; // Aumentado para maior precisão em Windows
-      this.analyser.smoothingTimeConstant = 0.5; // Bom valor para suavizar variações
+      // Configurações otimizadas para detecção de voz
+      this.analyser.fftSize = 1024; // Mais detalhado para melhor análise de frequência
+      this.analyser.smoothingTimeConstant = 0.5; // Boa suavização sem perder resposta rápida
       
-      // Adicionar um filtro passa-alta para reduzir ruído de baixa frequência
+      // Filtro passa-alta para reduzir ruídos de baixa frequência
       const highpassFilter = this.audioContext.createBiquadFilter();
       highpassFilter.type = "highpass";
-      highpassFilter.frequency.value = 85; // Hz - reduz ruído de baixa frequência
+      highpassFilter.frequency.value = 85; // Filtra ruído abaixo da voz humana típica
       
-      // Adicionar filtro passa-baixa para foco na voz (até ~3.5kHz)
+      // Filtro passa-baixa para reduzir ruídos de alta frequência
       const lowpassFilter = this.audioContext.createBiquadFilter();
       lowpassFilter.type = "lowpass";
-      lowpassFilter.frequency.value = 3500; // Hz - atenua frequências acima da voz humana
+      lowpassFilter.frequency.value = 3500; // Mantém a maior parte da fala humana
       
-      const microphone = this.audioContext.createMediaStreamSource(stream);
+      // Criação do buffer para análise
+      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       
-      // Conectar a cadeia de processamento de áudio
+      // Conectar o stream aos filtros e analisador
+      const microphone = this.audioContext.createMediaStreamSource(this.stream!);
       microphone.connect(highpassFilter);
       highpassFilter.connect(lowpassFilter);
       lowpassFilter.connect(this.analyser);
       
-      console.log("SilenceDetector initialized with settings:", {
-        silenceThreshold: this.silenceThreshold,
-        minVoiceLevel: this.minVoiceLevel, 
-        silenceDuration: this.silenceDuration,
-        minRecordingDuration: this.minRecordingDuration,
-        consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
-        platformAdjustment: this.platformAdjustment,
-        continuousModeEnabled: this.continuousModeEnabled,
-        fftSize: this.analyser.fftSize
-      });
-      
-      // Iniciar auto-calibração antes do monitoramento
-      this.calibrateMicrophone().then(() => {
-        this.startMonitoring();
-      });
-      
-      return true;
+      this.log("Audio analysis setup completed successfully");
     } catch (error) {
-      console.error("Failed to initialize SilenceDetector:", error);
-      return false;
+      console.error("[SilenceDetector] Error setting up audio analysis:", error);
     }
   }
   
-  /**
-   * Detecta a plataforma e faz ajustes específicos
-   */
-  private detectPlatform(): void {
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    
-    // Ajustes específicos por plataforma
-    if (userAgent.indexOf('windows') !== -1) {
-      console.log("Windows platform detected, adjusting sensitivity");
-      this.platformAdjustment = 0.8; // Sensibilidade reduzida para Windows
-      this.consecutiveSilenceThreshold = 6; // Reduzido de 8 para 6
-    } else if (userAgent.indexOf('mac') !== -1) {
-      console.log("Mac platform detected, using standard settings");
-      this.platformAdjustment = 1.0;
-    } else if (userAgent.indexOf('android') !== -1 || userAgent.indexOf('iphone') !== -1) {
-      console.log("Mobile platform detected, increasing sensitivity");
-      this.platformAdjustment = 1.2; // Sensibilidade aumentada para dispositivos móveis
-      this.consecutiveSilenceThreshold = 4; // Reduzido ainda mais para mobile
-    } else if (userAgent.indexOf('linux') !== -1) {
-      console.log("Linux platform detected, adjusting sensitivity");
-      this.platformAdjustment = 0.9;
-      this.consecutiveSilenceThreshold = 5; // Valor intermediário para Linux
+  private startSilenceDetection() {
+    if (!this.analyser || !this.dataArray) {
+      console.error("[SilenceDetector] Analyzer not initialized");
+      return;
     }
     
-    // Ajustar thresholds com base na plataforma
-    this.silenceThreshold *= this.platformAdjustment;
-    this.minVoiceLevel *= this.platformAdjustment;
-  }
-  
-  /**
-   * Calibra automaticamente o microfone para se adaptar ao ambiente
-   */
-  private async calibrateMicrophone(): Promise<void> {
-    if (!this.analyser || !this.isActive) return;
-    
-    console.log("Iniciando calibração do microfone...");
-    
-    // Coletar amostras por 1 segundo (reduzido para calibração mais rápida)
-    const sampleDuration = 1000;
-    const startTime = Date.now();
-    const samples: number[] = [];
-    
-    const bufferLength = this.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    return new Promise<void>(resolve => {
-      const collectSample = () => {
-        if (Date.now() - startTime < sampleDuration && this.analyser && this.isActive) {
-          this.analyser.getByteFrequencyData(dataArray);
-          
-          // Foco em frequências relevantes para voz humana (85Hz-255Hz)
-          let voiceSum = 0;
-          let voiceCount = 0;
-          
-          // Cálculo aproximado: cada bin representa frequência baseada no fftSize
-          const binSize = 22050 / (bufferLength * 2);
-          const startBin = Math.floor(85 / binSize); 
-          const endBin = Math.floor(255 / binSize);
-          
-          // Somar níveis nas frequências de voz humana
-          for (let i = startBin; i < endBin && i < bufferLength; i++) {
-            voiceSum += dataArray[i];
-            voiceCount++;
-          }
-          
-          // Calcular média geral
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          
-          const average = sum / bufferLength;
-          const voiceAverage = voiceSum / (voiceCount || 1);
-          const weightedAverage = (voiceAverage * 0.7) + (average * 0.3);
-          
-          samples.push(weightedAverage);
-          
-          requestAnimationFrame(collectSample);
-        } else {
-          // Processar amostras
-          if (samples.length > 0 && this.isActive) {
-            // Ordenar amostras e pegar o 75º percentil como nível de ruído ambiente
-            const sortedSamples = [...samples].sort((a, b) => a - b);
-            const percentile75 = sortedSamples[Math.floor(samples.length * 0.75)];
-            
-            // Ajustar SILENCE_THRESHOLD para 20% acima do ruído ambiente
-            this.silenceThreshold = Math.max(0.5, (percentile75 / 256) * 4 * 1.2);
-            
-            // Ajustar MIN_VOICE_LEVEL para 80% acima do ruído ambiente (reduzido de 100% para aumentar sensibilidade)
-            this.minVoiceLevel = Math.max(0.7, (percentile75 / 256) * 4 * 1.8);
-            
-            // Aplicar ajuste de plataforma após calibração
-            this.silenceThreshold *= this.platformAdjustment;
-            this.minVoiceLevel *= this.platformAdjustment;
-            
-            console.log(`Calibração concluída: ruído ambiente=${(percentile75 / 256 * 4).toFixed(2)}, ` + 
-                        `novo silence threshold=${this.silenceThreshold.toFixed(2)}, ` +
-                        `novo voice level=${this.minVoiceLevel.toFixed(2)}`);
-            
-            this.calibrated = true;
-          } else {
-            console.log("Falha na calibração - sem amostras ou detector inativo");
-          }
-          
-          resolve();
-        }
-      };
-      
-      collectSample();
-    });
-  }
-  
-  /**
-   * Inicia o monitoramento de áudio
-   */
-  private startMonitoring() {
-    if (!this.analyser || !this.isActive) return;
-    
-    const bufferLength = this.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
+    // Monitorar níveis de áudio continuamente
     const checkAudioLevel = () => {
-      if (!this.isActive || !this.analyser) return;
+      if (!this.analyser || !this.dataArray) return;
       
-      // Obter dados de frequência
-      this.analyser.getByteFrequencyData(dataArray);
+      this.analyser.getByteFrequencyData(this.dataArray);
       
-      // Foco em frequências relevantes para voz humana (85Hz-255Hz)
+      // Focamos nas frequências da voz humana (85Hz-255Hz)
       let voiceSum = 0;
       let voiceCount = 0;
       
-      // Cálculo baseado no fftSize atual
-      const binSize = 22050 / (bufferLength * 2);
-      const startBin = Math.floor(85 / binSize); 
-      const endBin = Math.floor(255 / binSize);
+      // Cálculo aproximado de bins para frequências específicas da voz
+      // Para fftSize 1024, cada bin é ~21Hz (taxa de amostragem 44100/2 dividido por frequencyBinCount)
+      const startBin = Math.floor(85 / 21); // ~4
+      const endBin = Math.floor(255 / 21);  // ~12
       
-      // Somar apenas as frequências de voz típicas
-      for (let i = startBin; i < endBin && i < bufferLength; i++) {
-        voiceSum += dataArray[i];
+      for (let i = startBin; i < endBin && i < this.dataArray.length; i++) {
+        voiceSum += this.dataArray[i];
         voiceCount++;
       }
       
-      // Calcular média geral e média na faixa de voz
+      // Calcular média geral
       let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
+      for (let i = 0; i < this.dataArray.length; i++) {
+        sum += this.dataArray[i];
       }
       
-      const average = sum / bufferLength;
+      const average = sum / this.dataArray.length;
       const voiceAverage = voiceSum / (voiceCount || 1);
       
-      // Dar maior peso à faixa de voz humana
-      const weightedAverage = (voiceAverage * 0.7) + (average * 0.3);
-      const normalizedLevel = weightedAverage / 256 * 4; // Normalizar para faixa similar aos valores anteriores
+      // Dar mais peso à faixa de voz humana
+      const weightedAverage = (voiceAverage * 0.8) + (average * 0.2);
+      const normalizedValue = weightedAverage / 256; // Normalizar para 0-1
       
       // Adicionar ao histórico de níveis
-      this.audioLevels.push(normalizedLevel);
-      if (this.audioLevels.length > 20) { // Manter histórico mais longo
+      this.audioLevels.push(normalizedValue * 6); // Amplificamos o valor para ter melhor sensibilidade
+      
+      // Manter apenas os últimos N níveis
+      if (this.audioLevels.length > 20) {
         this.audioLevels.shift();
       }
       
-      const currentTime = Date.now();
-      
-      // Log periódico (a cada ~1s)
-      if (currentTime % 1000 < 50) {
-        console.log(`SilenceDetector: weighted=${normalizedLevel.toFixed(2)}, voice=${this.voiceDetected}, silence=${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}, elapsed=${currentTime - this.silenceStartTime}ms`);
-      }
-      
-      // Verificar se é voz com histerese (evita oscilações)
+      // Verificar se há voz (com histerese para evitar oscilações)
       const recentLevels = this.audioLevels.slice(-5);
-      const recentAverage = recentLevels.reduce((sum, val) => sum + val, 0) / (recentLevels.length || 1);
+      const recentAverage = recentLevels.reduce((sum, level) => sum + level, 0) / recentLevels.length;
       
-      // Reduzido o theshold para detectar voz mais facilmente
-      if (recentAverage > this.minVoiceLevel * this.voiceThresholdMultiplier) {
+      // Detecção de voz com histerese
+      if (recentAverage > this.minVoiceLevel + 0.2) {
         if (!this.voiceDetected) {
-          console.log(`Voice detected with level: ${recentAverage.toFixed(2)} (threshold: ${this.minVoiceLevel.toFixed(2)})`);
-          this.voiceDetected = true;
+          this.log(`Voice detected with level: ${recentAverage.toFixed(2)} (threshold: ${this.minVoiceLevel.toFixed(2)})`);
           
-          // Produzir som sutil de feedback se for a primeira detecção de voz
-          try {
-            if (this.audioContext && this.audioLevels.length <= 5) {
-              const oscillator = this.audioContext.createOscillator();
-              const gainNode = this.audioContext.createGain();
-              
-              oscillator.type = 'sine';
-              oscillator.frequency.setValueAtTime(660, this.audioContext.currentTime);
-              gainNode.gain.setValueAtTime(0.03, this.audioContext.currentTime); // Bem baixo
-              
-              oscillator.connect(gainNode);
-              gainNode.connect(this.audioContext.destination);
-              
-              oscillator.start();
-              oscillator.stop(this.audioContext.currentTime + 0.1);
-            }
-          } catch (e) {
-            // Ignorar erros do som de feedback
-          }
+          // Feedback sonoro (opcional)
+          this.playDetectionTone(660, 0.05, 0.1);
         }
         
+        this.voiceDetected = true;
         this.consecutiveSilenceCount = 0;
-        this.silenceStartTime = currentTime;
-        this.silenceLogged = false;
+        this.silenceStartTime = Date.now();
       }
       
-      // Verificar silêncio após certo tempo de gravação
-      this.checkForSilence(currentTime);
+      // Log de amostra a cada 1 segundo
+      if (Date.now() % 1000 < 50) {
+        this.log(
+          `Audio levels: weighted=${recentAverage.toFixed(2)}, ` +
+          `voice=${this.voiceDetected}, silence=${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}, ` +
+          `elapsed=${Date.now() - this.silenceStartTime}ms`
+        );
+      }
       
-      if (this.isActive) {
-        this.animationFrame = requestAnimationFrame(checkAudioLevel);
+      // Continuar monitorando enquanto estiver inicializado
+      if (this.initialized) {
+        this.animationFrameId = requestAnimationFrame(checkAudioLevel);
       }
     };
     
-    this.animationFrame = requestAnimationFrame(checkAudioLevel);
+    // Iniciar loop de monitoramento
+    this.animationFrameId = requestAnimationFrame(checkAudioLevel);
+    
+    // Verificar silêncio em intervalos regulares
+    this.checkSilenceIntervalId = window.setInterval(() => {
+      this.checkForSilence();
+    }, 50) as unknown as number;
   }
   
-  /**
-   * Verifica se há silêncio contínuo após detecção de voz
-   */
-  private checkForSilence(currentTime: number) {
-    const recordingDuration = currentTime - this.recordingStartTime;
-    const silenceDuration = currentTime - this.silenceStartTime;
+  private checkForSilence() {
+    if (!this.initialized || !this.continuousMode) return;
     
-    // Verificar só depois de ter gravado o mínimo necessário
-    if (recordingDuration < this.minRecordingDuration) return;
+    const currentTime = Date.now();
+    const elapsedSilence = currentTime - this.silenceStartTime;
+    const recordingLength = currentTime - this.recordingStartTime;
     
-    // Obter média móvel de mais amostras (10 em vez de 5)
+    // Calcular média dos últimos níveis de áudio
     const recentLevels = this.audioLevels.slice(-10);
-    
-    // Calcular média dos níveis recentes para melhor estabilidade
     const avgLevel = recentLevels.reduce((sum, level) => sum + level, 0) / 
-                  (recentLevels.length || 1);
+                     (recentLevels.length || 1);
     
-    // Considerar como silêncio se a média estiver abaixo do limiar
+    // Considerar silêncio se nível médio estiver abaixo do limiar
     const isSilent = avgLevel < this.silenceThreshold;
     
+    // Log detalhado a cada segundo
+    if (currentTime % 1000 < 50) {
+      this.log(
+        `Silence check: avgLevel=${avgLevel.toFixed(2)}, ` +
+        `threshold=${this.silenceThreshold}, ` +
+        `isSilent=${isSilent}, ` +
+        `count=${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}, ` +
+        `elapsedSilence=${elapsedSilence}ms`
+      );
+    }
+    
     if (isSilent) {
-      this.consecutiveSilenceCount++;
+      this.consecutiveSilenceCount += 1;
       
-      if (!this.silenceLogged && this.consecutiveSilenceCount > 2) {
-        console.log(`SilenceDetector: Silence detected (${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}), avg level=${avgLevel.toFixed(2)}, threshold=${this.silenceThreshold.toFixed(2)}`);
-        this.silenceLogged = true;
+      // Log quando começamos a detectar silêncio
+      if (this.consecutiveSilenceCount === 3) {
+        this.log(`Silence detected (${this.consecutiveSilenceCount}/${this.consecutiveSilenceThreshold}), avg level=${avgLevel.toFixed(2)}, threshold=${this.silenceThreshold}`);
+      }
+      
+      // Log a cada 5 contagens
+      if (this.consecutiveSilenceCount % 5 === 0 && this.consecutiveSilenceCount > 3) {
+        this.log(`Silence continuing: count=${this.consecutiveSilenceCount}, level=${avgLevel.toFixed(2)}`);
       }
     } else {
       if (this.consecutiveSilenceCount > 0) {
-        console.log(`SilenceDetector: Resetting silence counter after ${this.consecutiveSilenceCount} samples, current level=${avgLevel.toFixed(2)}`);
-        this.silenceLogged = false;
+        this.log(`Resetting silence counter after ${this.consecutiveSilenceCount} samples, current level=${avgLevel.toFixed(2)}`);
       }
       this.consecutiveSilenceCount = 0;
       this.silenceStartTime = currentTime;
     }
     
-    // Condição modificada para modo contínuo de conversação:
-    // Notifica silêncio apenas se voz foi detectada E:
-    // 1. Temos amostras consecutivas suficientes de silêncio OU
-    // 2. Temos um longo período de silêncio total
-    const silenceThresholdReached = this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold;
-    const longSilenceDetected = silenceDuration > (this.continuousModeEnabled ? this.silenceDuration : this.silenceDuration * 1.5);
-    
-    if (this.voiceDetected && (silenceThresholdReached || longSilenceDetected)) {
-      console.log(`SilenceDetector: Sufficient silence detected: ${this.consecutiveSilenceCount} samples or ${silenceDuration}ms > ${this.silenceDuration}ms`);
-      this.notifySilenceDetected();
-    }
-  }
-  
-  /**
-   * Notifica o callback de detecção de silêncio
-   */
-  private notifySilenceDetected() {
-    if (this.isActive && this.onSilenceDetected) {
-      // Desativar antes de chamar o callback para evitar chamadas múltiplas
-      this.isActive = false;
+    // Condições para considerar o silêncio suficiente para parar a gravação:
+    // 1. Voz foi detectada anteriormente
+    // 2. Gravação durou pelo menos o mínimo de tempo
+    // 3. Temos amostras de silêncio consecutivas suficientes
+    //    OU um período longo de silêncio total
+    if (this.voiceDetected && 
+        recordingLength > this.minRecordingDuration && 
+        (this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold || 
+         elapsedSilence > this.silenceDuration * 1.5)) {
       
-      // Chamar o callback
-      console.log("SilenceDetector: Notifying silence detected callback");
-      this.onSilenceDetected();
-    }
-  }
-  
-  /**
-   * Limpa todos os recursos
-   */
-  public cleanup() {
-    this.isActive = false;
-    
-    if (this.animationFrame) {
-      cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = null;
-    }
-    
-    if (this.audioContext) {
-      try {
-        this.audioContext.close();
-      } catch (e) {
-        console.error("Error closing audio context:", e);
+      this.log(`Sufficient silence detected: ${this.consecutiveSilenceCount} samples or ${elapsedSilence}ms > ${this.silenceDuration}ms`);
+      this.log(`Recording length: ${recordingLength}ms, minimum: ${this.minRecordingDuration}ms`);
+      this.log(`Notifying silence detected callback`);
+      
+      // Executar callback de silêncio
+      if (this.silenceCallback) {
+        // Feedback sonoro de fim (opcional)
+        this.playDetectionTone(440, 0.05, 0.15);
+        
+        setTimeout(() => {
+          if (this.silenceCallback) {
+            this.silenceCallback();
+          }
+        }, 100);
       }
-      this.audioContext = null;
-      this.analyser = null;
+      
+      // Limpar este verificador para evitar múltiplas chamadas
+      this.cleanup();
     }
-    
-    this.audioLevels = [];
-    this.consecutiveSilenceCount = 0;
-    this.voiceDetected = false;
-    this.calibrated = false;
-    
-    console.log("SilenceDetector cleanup completed");
   }
   
-  /**
-   * Retorna se voz foi detectada durante a gravação atual
-   */
-  public hasVoiceBeenDetected(): boolean {
+  private playDetectionTone(frequency: number, volume: number, duration: number) {
+    try {
+      if (!this.audioContext) return;
+      
+      const oscillator = this.audioContext.createOscillator();
+      const gainNode = this.audioContext.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+      gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+      
+      oscillator.start();
+      oscillator.stop(this.audioContext.currentTime + duration);
+    } catch (e) {
+      // Ignorar erros do feedback sonoro
+    }
+  }
+  
+  hasVoiceBeenDetected(): boolean {
     return this.voiceDetected;
   }
   
-  /**
-   * Retorna se o microfone foi calibrado
-   */
-  public isCalibrated(): boolean {
-    return this.calibrated;
+  getAudioLevels(): number[] {
+    return [...this.audioLevels];
   }
   
-  /**
-   * Retorna o nível médio de áudio recente
-   */
-  public getRecentAudioLevel(): number {
-    if (this.audioLevels.length === 0) return 0;
-    return this.audioLevels.slice(-5).reduce((sum, level) => sum + level, 0) / 
-           Math.min(5, this.audioLevels.length);
+  getConsecutiveSilenceCount(): number {
+    return this.consecutiveSilenceCount;
   }
   
-  /**
-   * Define se o modo contínuo está ativado
-   */
-  public setContinuousMode(enabled: boolean): void {
-    this.continuousModeEnabled = enabled;
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
   }
   
-  /**
-   * Retorna se o modo contínuo está ativado
-   */
-  public isContinuousModeEnabled(): boolean {
-    return this.continuousModeEnabled;
+  cleanup() {
+    this.log("Cleaning up silence detector resources");
+    
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    
+    if (this.checkSilenceIntervalId !== null) {
+      clearInterval(this.checkSilenceIntervalId);
+      this.checkSilenceIntervalId = null;
+    }
+    
+    // Não fechar o audioContext aqui, apenas desconectar o analisador
+    // pois pode estar sendo usado por outras partes da aplicação
+    if (this.analyser) {
+      try {
+        this.analyser.disconnect();
+      } catch (e) {
+        // Ignora erro se já desconectado
+      }
+      this.analyser = null;
+    }
+    
+    this.initialized = false;
+    this.silenceCallback = null;
+    this.dataArray = null;
+    
+    // Manter audioLevels e voiceDetected para consulta posterior
   }
 }
 
-// Instância singleton para uso em toda a aplicação
+// Exportar uma única instância para uso em toda a aplicação
 export const silenceDetector = new SilenceDetector();

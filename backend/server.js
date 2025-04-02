@@ -17,7 +17,7 @@ const trainingRoutes = require('./routes/training');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEV_PORT = 3030; // Changed from 8080 to 3030 to avoid conflict with frontend Vite
+const DEV_PORT = process.env.DEV_PORT || 3030; // Use DEV_PORT from .env
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';

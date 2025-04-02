@@ -24,9 +24,10 @@ const Index = () => {
   const [apiCheckInProgress, setApiCheckInProgress] = useState(false);
 
   // Determine the current API URL based on environment
+  const devApiPort = process.env.DEV_API_PORT || 3030;
   const apiBaseUrl = process.env.NODE_ENV === 'production' 
     ? 'http://191.232.33.131:3000' 
-    : `http://localhost:${process.env.DEV_API_PORT || 3030}`; // Use the DEV_API_PORT env var or fallback to 3030
+    : `http://localhost:${devApiPort}`; 
 
   // Function to fetch API key with retry limits and backoff
   const fetchApiKey = useCallback(async () => {
