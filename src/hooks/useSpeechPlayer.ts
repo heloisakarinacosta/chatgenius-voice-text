@@ -128,7 +128,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const analyzer = audioContext.createAnalyser();
       analyzer.fftSize = 256;
-      analyzer.smoothingTimeConstant = 0.3; // Valor ajustado para melhor visualização
+      analyzer.smoothingTimeConstant = 0.2; // Valor reduzido para reação mais rápida
       
       audioContextRef.current = audioContext;
       analyzerRef.current = analyzer;
@@ -166,7 +166,7 @@ export function useSpeechPlayer(defaultVoice: string = "alloy") {
           
           // Amplificar valores para melhor visualização
           const normalizedValue = (sum / (end - start)) / 256;
-          levelData[i] = Math.min(1, normalizedValue * 3); // Amplificação para melhor visualização
+          levelData[i] = Math.min(1, normalizedValue * 5); // Amplificação aumentada para 5x
         }
         
         setAudioData(levelData);
