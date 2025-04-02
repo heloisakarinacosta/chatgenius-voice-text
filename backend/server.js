@@ -22,21 +22,6 @@ const DEV_PORT = 8080;
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
 
-// HTTPS options for production
-let httpsOptions = {};
-if (isProduction && process.env.SSL_KEY_PATH && process.env.SSL_CERT_PATH) {
-  try {
-    httpsOptions = {
-      key: fs.readFileSync(process.env.SSL_KEY_PATH),
-      cert: fs.readFileSync(process.env.SSL_CERT_PATH)
-    };
-    console.log('SSL certificates loaded successfully');
-  } catch (error) {
-    console.error('Failed to load SSL certificates:', error);
-    process.exit(1);
-  }
-}
-
 // Middleware
 app.use(cors({
   origin: [
@@ -81,9 +66,14 @@ if (isProduction) {
   });
 }
 
-// Start server
-if (isProduction && process.env.USE_HTTPS === 'true' && httpsOptions.key && httpsOptions.cert) {
-  // Create HTTPS server
+// Start server based on configuration
+if (isProduction && process.env.USE_HTTPS === 'true' && 
+    fs.existsSync(process.env.SSL_KEY_PATH) && fs.existsSync(process.env.SSL_CERT_PATH)) {
+  // Create HTTPS server with SSL certificates
+  const httpsOptions = {
+    key: fs.readFileSync(process.env.SSL_KEY_PATH),
+    cert: fs.readFileSync(process.env.SSL_CERT_PATH)
+  };
   const httpsServer = https.createServer(httpsOptions, app);
   httpsServer.listen(PORT, () => {
     console.log(`HTTPS Server running on port ${PORT}`);
@@ -110,5 +100,14 @@ if (isProduction && process.env.USE_HTTPS === 'true' && httpsOptions.key && http
     console.log('Available routes:');
     console.log('- GET /api/admin/api-key');
     console.log('- GET /api/health');
+    
+    if (isProduction) {
+      console.log('');
+      console.log('WARNING: Running in production mode without HTTPS.');
+      console.log('To enable microphone access in production, please consider:');
+      console.log('1. Using a reverse proxy (like Nginx or Apache) with HTTPS');
+      console.log('2. Updating the .env file with your SSL certificate paths');
+      console.log('');
+    }
   });
 }
