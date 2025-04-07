@@ -1,17 +1,13 @@
-
 import * as localDb from './localStorageDb';
 
 // Base URL for the API
 const getApiBaseUrl = () => {
-  const DEV_PORT = process.env.DEV_PORT || 3030;
-  
   if (process.env.NODE_ENV === 'production') {
-    // In production, we need to use the fully qualified URL with explicit port
-    // to ensure requests don't get routed to the frontend server
-    return window.location.origin + '/api';
+    // In production, we should use a relative URL to ensure requests go to the same server
+    return '/api';
   } else {
-    // In development, use the explicit localhost address with the DEV_PORT
-    return `http://localhost:${DEV_PORT}/api`;
+    // In development, use the proxy defined in vite.config.ts
+    return '/api';
   }
 };
 

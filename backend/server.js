@@ -46,6 +46,12 @@ db.initDatabase().then(connected => {
   console.log(`Database ${connected ? 'connected successfully' : 'connection failed'}`);
 });
 
+// Always set JSON content type for API responses
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
 // API routes
 app.use('/api/widget', widgetRoutes);
 app.use('/api/agent', agentRoutes);
@@ -55,8 +61,6 @@ app.use('/api/training', trainingRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
-  // Explicitly set the content type to application/json
-  res.setHeader('Content-Type', 'application/json');
   res.json({ status: 'ok', dbConnected: db.isConnected() });
 });
 
@@ -65,7 +69,9 @@ if (isProduction) {
   // Set static folder
   const staticPath = path.resolve(__dirname, '../dist');
   
-  // API routes should be handled before static files
+  // Serve static files
+  app.use(express.static(staticPath));
+  
   // All other routes should redirect to the index.html
   app.get('*', (req, res, next) => {
     // Skip API routes
@@ -74,9 +80,6 @@ if (isProduction) {
     }
     res.sendFile(path.resolve(staticPath, 'index.html'));
   });
-  
-  // Serve static files
-  app.use(express.static(staticPath));
 }
 
 // Start server based on configuration

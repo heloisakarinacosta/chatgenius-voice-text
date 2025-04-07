@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // In development, proxy API requests to the backend server
       '/api': {
-        target: `http://localhost:${process.env.DEV_PORT || 3030}`,
+        target: 'http://localhost:3030',
         changeOrigin: true,
         secure: false,
       }
@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => ({
   define: {
     'process.env': {
       PORT: process.env.PORT || (mode === 'production' ? 3000 : 8080),
-      DEV_PORT: 3030, // Porta da API de desenvolvimento definida aqui
+      DEV_PORT: 3030, // Development API port defined here
       NODE_ENV: mode // Make sure NODE_ENV is properly exposed to client code
     }
   }

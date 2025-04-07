@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useChat } from "@/contexts/ChatContext";
@@ -23,14 +22,11 @@ const Index = () => {
   const [tempApiKey, setTempApiKey] = useState("");
   const [apiCheckInProgress, setApiCheckInProgress] = useState(false);
 
-  // Determine the current API URL based on environment
-  const devApiPort = process.env.DEV_API_PORT || 3030;
-  const apiBaseUrl = process.env.NODE_ENV === 'production' 
-    ? '' // Use relative URL in production 
-    : `http://localhost:${devApiPort}`; 
-
+  // Determine the API URL - we'll use the proxy setup in vite.config.ts
+  const apiBaseUrl = '/api'; 
+  
   // Log the API base URL to help with debugging
-  console.log(`Index component using API base URL: ${apiBaseUrl || '(relative)'} (${process.env.NODE_ENV} environment)`);
+  console.log(`Index component using API base URL: ${apiBaseUrl} (${process.env.NODE_ENV} environment)`);
 
   // Function to fetch API key with retry limits and backoff
   const fetchApiKey = useCallback(async () => {
@@ -39,19 +35,19 @@ const Index = () => {
     try {
       setApiCheckInProgress(true);
       console.log("Tentando buscar chave de API do backend...");
-      console.log("Attempting to connect to backend API at:", apiBaseUrl);
       // Add cache busting to prevent browser caching
       const cacheBuster = new Date().getTime();
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 3000)
       );
       
-      // Use the dynamic API URL based on environment
-      const fetchPromise = fetch(`${apiBaseUrl}/api/admin/api-key?_=${cacheBuster}`, {
+      // Use the proxy URL
+      const fetchPromise = fetch(`${apiBaseUrl}/admin/api-key?_=${cacheBuster}`, {
         headers: { 
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
-          'Expires': '0'
+          'Expires': '0',
+          'Accept': 'application/json'
         },
         cache: 'no-store'
       });
@@ -67,6 +63,13 @@ const Index = () => {
         throw new Error(`Falha ao buscar chave de API: ${response.status}`);
       }
       
+      // Check content type to ensure we're getting JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('API returned non-JSON response:', contentType);
+        throw new Error('API returned non-JSON response');
+      }
+      
       const data = await response.json();
       console.log("Chave de API obtida com sucesso do backend");
       return data;
@@ -76,7 +79,8 @@ const Index = () => {
       
       // Check if error is due to backend server not running
       if (error instanceof TypeError && error.message.includes('Failed to fetch') ||
-          error.message === 'Request timeout') {
+          error.message === 'Request timeout' ||
+          error.message.includes('non-JSON response')) {
         setBackendError(true);
         
         // Only show toast once
