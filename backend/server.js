@@ -33,7 +33,9 @@ app.use(cors({
     'http://localhost:8080', 
     'https://localhost:3000',
     'http://191.232.33.131:3000',
-    'https://191.232.33.131:3000'
+    'https://191.232.33.131:3000',
+    // Add wildcard to accept requests from lovable preview domains
+    /\.lovableproject\.com$/
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
@@ -44,6 +46,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Initialize database
 db.initDatabase().then(connected => {
   console.log(`Database ${connected ? 'connected successfully' : 'connection failed'}`);
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
 // Always set JSON content type for API responses
@@ -81,6 +89,19 @@ if (isProduction) {
     res.sendFile(path.resolve(staticPath, 'index.html'));
   });
 }
+
+// Catch-all route handler for unhandled routes
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'API route not found' });
+  } else if (isProduction) {
+    // In production, redirect to index.html for client-side routing
+    res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
+  } else {
+    // In development, just send a 404
+    res.status(404).json({ error: 'Route not found' });
+  }
+});
 
 // Start server based on configuration
 if (isProduction && process.env.USE_HTTPS === 'true' && 
