@@ -1,14 +1,24 @@
 
 import * as localDb from './localStorageDb';
 
-// Base URL for the API - Using the configured DEV_API_PORT from process.env
-const DEV_PORT = process.env.DEV_API_PORT || 3030;
-const API_BASE_URL = process.env.NODE_ENV === 'production'
-  ? '/api'  // In production, use relative path to avoid CORS issues
-  : `http://localhost:${DEV_PORT}/api`;
+// Base URL for the API
+const getApiBaseUrl = () => {
+  const DEV_PORT = process.env.DEV_PORT || 3030;
+  
+  if (process.env.NODE_ENV === 'production') {
+    // In production, we need to use the fully qualified URL with explicit port
+    // to ensure requests don't get routed to the frontend server
+    return window.location.origin + '/api';
+  } else {
+    // In development, use the explicit localhost address with the DEV_PORT
+    return `http://localhost:${DEV_PORT}/api`;
+  }
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Log the API base URL to help with debugging
-console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV} environment)`);
+console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV || 'development'} environment)`);
 
 // Configuration for fetch requests
 const FETCH_TIMEOUT = 3000; // 3 seconds timeout
@@ -43,7 +53,6 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
 };
 
 // Initialize database connection - this will try to connect to the backend API
-// Added retry delay to prevent rapid reconnection attempts
 export const initDatabase = async () => {
   // Check if we've already tried recently to avoid hammering the server
   const now = Date.now();
@@ -71,7 +80,10 @@ export const initDatabase = async () => {
     
     console.log('Attempting to connect to backend API at:', API_BASE_URL);
     const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
-      headers: { 'Cache-Control': 'no-cache' },
+      headers: { 
+        'Cache-Control': 'no-cache',
+        'Accept': 'application/json'
+      },
       cache: 'no-store'
     });
     
@@ -79,6 +91,14 @@ export const initDatabase = async () => {
       console.error('API returned error status:', response.status);
       isDbConnected = false;
       throw new Error('API is not available');
+    }
+    
+    // Check content type to ensure we're getting JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error('API returned non-JSON response:', contentType);
+      isDbConnected = false;
+      throw new Error('API returned non-JSON response');
     }
     
     const data = await response.json();

@@ -36,7 +36,7 @@ app.use(cors({
     'https://191.232.33.131:3000'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -55,6 +55,8 @@ app.use('/api/training', trainingRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
+  // Explicitly set the content type to application/json
+  res.setHeader('Content-Type', 'application/json');
   res.json({ status: 'ok', dbConnected: db.isConnected() });
 });
 
@@ -62,12 +64,19 @@ app.get('/api/health', (req, res) => {
 if (isProduction) {
   // Set static folder
   const staticPath = path.resolve(__dirname, '../dist');
-  app.use(express.static(staticPath));
-
+  
+  // API routes should be handled before static files
   // All other routes should redirect to the index.html
-  app.get('*', (req, res) => {
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
     res.sendFile(path.resolve(staticPath, 'index.html'));
   });
+  
+  // Serve static files
+  app.use(express.static(staticPath));
 }
 
 // Start server based on configuration
@@ -101,9 +110,13 @@ if (isProduction && process.env.USE_HTTPS === 'true' &&
   server.listen(isProduction ? PORT : DEV_PORT, () => {
     console.log(`HTTP Server running on port ${isProduction ? PORT : DEV_PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
-    console.log('Available routes:');
-    console.log('- GET /api/admin/api-key');
+    console.log('Available API routes:');
     console.log('- GET /api/health');
+    console.log('- GET /api/widget');
+    console.log('- GET /api/agent');
+    console.log('- GET /api/admin');
+    console.log('- GET /api/conversation');
+    console.log('- GET /api/training');
     
     if (isProduction) {
       console.log('');
