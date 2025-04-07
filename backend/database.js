@@ -62,9 +62,7 @@ const initDatabase = async () => {
       database: dbConfig.database,
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0,
-      // Simplified authentication configuration
-      authPlugin: dbConfig.authPlugin
+      queueLimit: 0
     });
     
     console.log('Database pool initialized');
@@ -95,16 +93,6 @@ const initDatabase = async () => {
     } else if (error.code === 'ECONNREFUSED') {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
       console.error('Check if the server is running and accessible at the configured host and port');
-    } else if (error.code === 'AUTH_SWITCH_PLUGIN_ERROR' || error.message.includes('AUTH_SWITCH_PLUGIN_ERROR')) {
-      const dbConfig = getDbConfig();
-      console.error('AUTH PLUGIN ERROR: The server requested an unsupported authentication method');
-      console.error(`You specified auth plugin: ${dbConfig.authPlugin}`);
-      console.error('Try updating your .env file with the correct auth plugin:');
-      console.error('- For MySQL 8+: caching_sha2_password');
-      console.error('- For MySQL 5.7 or MariaDB: mysql_native_password');
-      console.error('Or run this SQL command to change the authentication method:');
-      console.error(`ALTER USER '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}' IDENTIFIED WITH mysql_native_password BY '${dbConfig.password || ''}';`);
-      console.error('FLUSH PRIVILEGES;');
     }
     
     console.log('Using file-based fallback data storage');

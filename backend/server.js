@@ -21,13 +21,16 @@ const DEV_PORT = process.env.DEV_PORT || 3030;
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
+console.log(`Running in ${isProduction ? 'production' : 'development'} mode`);
+console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 
 // Middleware
 app.use(cors({
   origin: [
     `http://localhost:${DEV_PORT}`, 
     'http://localhost:8081',
-    'http://localhost:3000', 
+    'http://localhost:3000',
+    'http://localhost:8080', 
     'https://localhost:3000',
     'http://191.232.33.131:3000',
     'https://191.232.33.131:3000'
