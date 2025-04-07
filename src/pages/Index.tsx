@@ -29,6 +29,9 @@ const Index = () => {
     ? '' // Use relative URL in production 
     : `http://localhost:${devApiPort}`; 
 
+  // Log the API base URL to help with debugging
+  console.log(`Index component using API base URL: ${apiBaseUrl || '(relative)'} (${process.env.NODE_ENV} environment)`);
+
   // Function to fetch API key with retry limits and backoff
   const fetchApiKey = useCallback(async () => {
     if (apiCheckInProgress) return { apiKey: adminConfig?.apiKey || null };

@@ -26,7 +26,6 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(cors({
   origin: [
     `http://localhost:${DEV_PORT}`, 
-    'http://localhost:8080',
     'http://localhost:8081',
     'http://localhost:3000', 
     'https://localhost:3000',

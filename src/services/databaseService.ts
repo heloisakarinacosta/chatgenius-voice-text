@@ -7,6 +7,9 @@ const API_BASE_URL = process.env.NODE_ENV === 'production'
   ? '/api'  // In production, use relative path to avoid CORS issues
   : `http://localhost:${DEV_PORT}/api`;
 
+// Log the API base URL to help with debugging
+console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV} environment)`);
+
 // Configuration for fetch requests
 const FETCH_TIMEOUT = 3000; // 3 seconds timeout
 const MAX_RETRIES = 1;
@@ -29,6 +32,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   
   try {
+    console.log(`Fetching from URL: ${url}`);
     const response = await fetch(url, { ...options, signal });
     clearTimeout(timeoutId);
     return response;

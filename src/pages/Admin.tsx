@@ -71,6 +71,15 @@ const Admin = () => {
     }
   }, [adminConfig, isLoading]);
 
+  // Get API URL for health check based on environment
+  const getApiHealthUrl = () => {
+    if (process.env.NODE_ENV === 'production') {
+      return '/api/health'; // Use relative URL in production
+    } else {
+      return `http://localhost:${DEV_PORT}/api/health`;
+    }
+  };
+
   // Refresh page to check connection status
   const refreshPage = () => {
     window.location.reload();
@@ -131,7 +140,7 @@ const Admin = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => window.open(`http://localhost:${DEV_PORT}/api/health`, '_blank')}
+                  onClick={() => window.open(getApiHealthUrl(), '_blank')}
                 >
                   Verificar API
                 </Button>
