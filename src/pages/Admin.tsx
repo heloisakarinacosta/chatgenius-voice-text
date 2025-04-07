@@ -10,14 +10,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-// Obtém a porta da API de desenvolvimento do ambiente
-const DEV_PORT = process.env.DEV_API_PORT || 3030;
-
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [apiKey, setApiKey] = useState("");
   const [loginAttempts, setLoginAttempts] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(false);
   const { adminConfig, loadData, isDbConnected } = useChat();
   const navigate = useNavigate();
   
@@ -73,13 +71,30 @@ const Admin = () => {
 
   // Get API URL for health check based on environment
   const getApiHealthUrl = () => {
-    // Use the proxy URL to ensure we're going through the same path
+    // Use the proxy URL to ensure we're going through the same path as the app uses
     return '/api/health';
   };
 
   // Refresh page to check connection status
   const refreshPage = () => {
     window.location.reload();
+  };
+  
+  // Force reconnect to database
+  const forceReconnect = async () => {
+    setIsConnecting(true);
+    try {
+      if (loadData) {
+        await loadData();
+        toast.success("Conexão reestabelecida com sucesso!");
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    } catch (error) {
+      console.error("Erro ao reconectar:", error);
+      toast.error("Erro ao reconectar");
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const handleLogin = (username: string, password: string) => {
@@ -142,11 +157,26 @@ const Admin = () => {
                   Verificar API
                 </Button>
                 <Button 
-                  variant="default" 
+                  variant="outline" 
                   size="sm" 
                   onClick={refreshPage}
                 >
-                  Tentar novamente
+                  Atualizar página
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={forceReconnect}
+                  disabled={isConnecting}
+                >
+                  {isConnecting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Reconectando...
+                    </span>
+                  ) : (
+                    "Forçar reconexão"
+                  )}
                 </Button>
               </div>
             </div>

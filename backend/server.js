@@ -48,22 +48,24 @@ app.use(cors({
 
 // Middleware to set JSON content type for all API responses
 app.use('/api', (req, res, next) => {
-  res.setHeader('Content-Type', 'application/json');
+  res.set('Content-Type', 'application/json');
   next();
 });
 
 // Health check route - independent of database
 app.get('/api/health', (req, res) => {
   // Respond even if database isn't connected
-  const dbStatus = db.isConnected();
+  const dbStatus = db.isConnected ? db.isConnected() : false;
   console.log(`Health check called - Database connected: ${dbStatus}`);
   
-  res.status(200).json({ 
-    status: 'ok', 
-    server: true,
-    dbConnected: dbStatus,
-    environment: process.env.NODE_ENV || 'development'
-  });
+  res.status(200)
+     .set('Content-Type', 'application/json')
+     .json({ 
+        status: 'ok', 
+        server: true,
+        dbConnected: dbStatus,
+        environment: process.env.NODE_ENV || 'development'
+     });
 });
 
 // Initialize database after setting up basic routes
@@ -84,7 +86,9 @@ app.use('/api/training', trainingRoutes);
 // Error handling middleware - must be after routes
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ error: err.message || 'Internal Server Error' });
+  res.status(500)
+     .set('Content-Type', 'application/json')
+     .json({ error: err.message || 'Internal Server Error' });
 });
 
 // Serve static files if in production
@@ -108,13 +112,17 @@ if (isProduction) {
 // Catch-all route handler for unhandled routes
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
-    res.status(404).json({ error: 'API route not found' });
+    res.status(404)
+       .set('Content-Type', 'application/json')
+       .json({ error: 'API route not found' });
   } else if (isProduction) {
     // In production, redirect to index.html for client-side routing
     res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
   } else {
     // In development, just send a 404
-    res.status(404).json({ error: 'Route not found' });
+    res.status(404)
+       .set('Content-Type', 'application/json')
+       .json({ error: 'Route not found' });
   }
 });
 

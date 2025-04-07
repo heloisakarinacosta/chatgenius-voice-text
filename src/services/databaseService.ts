@@ -18,8 +18,8 @@ const API_BASE_URL = getApiBaseUrl();
 console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV || 'development'} environment)`);
 
 // Configuration for fetch requests
-const FETCH_TIMEOUT = 5000; // 5 seconds timeout (increased from 3)
-const MAX_RETRIES = 2;     // Increased from 1
+const FETCH_TIMEOUT = 10000; // 10 seconds timeout (increased from 5)
+const MAX_RETRIES = 2;     
 const RETRY_DELAY = 1000;  // 1 second between retries
 
 // This file serves as a facade over actual database implementations
@@ -59,6 +59,15 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
     // Check if response is OK
     if (!response.ok) {
       console.error(`Fetch error: ${response.status} ${response.statusText}`);
+      
+      // Log the response body for debugging
+      try {
+        const errorText = await response.text();
+        console.error(`Error response body: ${errorText.substring(0, 200)}${errorText.length > 200 ? '...' : ''}`);
+      } catch (e) {
+        console.error('Could not read error response body');
+      }
+      
       throw new Error(`API returned error status: ${response.status}`);
     }
     
@@ -66,6 +75,15 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
       console.error('API returned non-JSON response:', contentType);
+      
+      // Try to get the text of the response for debugging
+      try {
+        const responseText = await response.text();
+        console.error(`Response body (not JSON): ${responseText.substring(0, 200)}${responseText.length > 200 ? '...' : ''}`);
+      } catch (e) {
+        console.error('Could not read non-JSON response body');
+      }
+      
       throw new Error('API returned non-JSON response');
     }
     
@@ -106,6 +124,21 @@ export const initDatabase = async () => {
     
     // Add cache busting parameter
     const cacheBuster = `?_=${Date.now()}`;
+    
+    try {
+      // First, try a simple options request to check CORS
+      await fetch(`${API_BASE_URL}/health${cacheBuster}`, {
+        method: 'OPTIONS',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      console.log('OPTIONS request succeeded, CORS appears to be properly configured');
+    } catch (corsError) {
+      console.warn('OPTIONS request failed, potential CORS issue:', corsError);
+      // Continue anyway, as the actual request might still work
+    }
+    
     const response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
       headers: { 
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -119,10 +152,12 @@ export const initDatabase = async () => {
     // Response checks are now done in fetchWithTimeout
     const data = await response.json();
     console.log('Backend health check response:', data);
-    isDbConnected = data.dbConnected === true;
     
-    if (!isDbConnected) {
-      console.log('Database not connected in backend, falling back to localStorage');
+    // A successful response with dbConnected: true means we're fully connected
+    isDbConnected = data.dbConnected === true && data.status === 'ok';
+    
+    if (!isDbConnected && data.status === 'ok') {
+      console.log('Server is OK but database not connected in backend, falling back to localStorage');
     }
     
     // Reset retry count on successful connection
@@ -590,7 +625,7 @@ export const getDbConnection = async () => {
     });
     
     const data = await response.json();
-    isDbConnected = data.dbConnected;
+    isDbConnected = data.dbConnected && data.status === 'ok';
     inProgressRequests.delete(requestId);
     return data.dbConnected;
   } catch (error) {
