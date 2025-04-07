@@ -27,16 +27,14 @@ const getDbConfig = () => {
       host: process.env.PROD_DB_HOST || 'localhost',
       user: process.env.PROD_DB_USER || 'root',
       password: process.env.PROD_DB_PASSWORD || '',
-      database: process.env.PROD_DB_NAME || 'chat_assistant',
-      authPlugin: process.env.PROD_DB_AUTH_PLUGIN || 'mysql_native_password'
+      database: process.env.PROD_DB_NAME || 'chat_assistant'
     };
   } else {
     return {
       host: process.env.DEV_DB_HOST || 'localhost',
       user: process.env.DEV_DB_USER || 'root',
       password: process.env.DEV_DB_PASSWORD || '',
-      database: process.env.DEV_DB_NAME || 'chat_assistant',
-      authPlugin: process.env.DEV_DB_AUTH_PLUGIN || 'mysql_native_password'
+      database: process.env.DEV_DB_NAME || 'chat_assistant'
     };
   }
 };
@@ -52,7 +50,6 @@ const initDatabase = async () => {
     console.log('Host:', dbConfig.host);
     console.log('User:', dbConfig.user);
     console.log('Database:', dbConfig.database);
-    console.log('Auth Plugin:', dbConfig.authPlugin);
     
     // Create database connection pool
     pool = mysql.createPool({
