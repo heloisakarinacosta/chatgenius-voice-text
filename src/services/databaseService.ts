@@ -1,3 +1,4 @@
+
 import * as localDb from './localStorageDb';
 
 // Base URL for the API
@@ -17,9 +18,9 @@ const API_BASE_URL = getApiBaseUrl();
 console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV || 'development'} environment)`);
 
 // Configuration for fetch requests
-const FETCH_TIMEOUT = 3000; // 3 seconds timeout
-const MAX_RETRIES = 1;
-const RETRY_DELAY = 1000; // 1 second between retries
+const FETCH_TIMEOUT = 5000; // 5 seconds timeout (increased from 3)
+const MAX_RETRIES = 2;     // Increased from 1
+const RETRY_DELAY = 1000;  // 1 second between retries
 
 // This file serves as a facade over actual database implementations
 // It will use either the API connection (to the backend) or localStorage as a fallback
@@ -39,8 +40,35 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   
   try {
     console.log(`Fetching from URL: ${url}`);
-    const response = await fetch(url, { ...options, signal });
+    
+    // Ensure we always set the proper headers
+    const headers = {
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache',
+      ...(options.headers || {})
+    };
+    
+    const response = await fetch(url, { 
+      ...options, 
+      signal,
+      headers 
+    });
+    
     clearTimeout(timeoutId);
+    
+    // Check if response is OK
+    if (!response.ok) {
+      console.error(`Fetch error: ${response.status} ${response.statusText}`);
+      throw new Error(`API returned error status: ${response.status}`);
+    }
+    
+    // Check content type to ensure we're getting JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error('API returned non-JSON response:', contentType);
+      throw new Error('API returned non-JSON response');
+    }
+    
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
@@ -75,28 +103,20 @@ export const initDatabase = async () => {
     connectionRetryCount++;
     
     console.log('Attempting to connect to backend API at:', API_BASE_URL);
-    const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
+    
+    // Add cache busting parameter
+    const cacheBuster = `?_=${Date.now()}`;
+    const response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
       headers: { 
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
         'Accept': 'application/json'
       },
       cache: 'no-store'
     });
     
-    if (!response.ok) {
-      console.error('API returned error status:', response.status);
-      isDbConnected = false;
-      throw new Error('API is not available');
-    }
-    
-    // Check content type to ensure we're getting JSON
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      console.error('API returned non-JSON response:', contentType);
-      isDbConnected = false;
-      throw new Error('API returned non-JSON response');
-    }
-    
+    // Response checks are now done in fetchWithTimeout
     const data = await response.json();
     console.log('Backend health check response:', data);
     isDbConnected = data.dbConnected === true;
@@ -557,11 +577,18 @@ export const getDbConnection = async () => {
   
   try {
     inProgressRequests.add(requestId);
-    const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
-      headers: { 'Cache-Control': 'no-cache' },
+    // Add cache busting parameter
+    const cacheBuster = `?_=${Date.now()}`;
+    const response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
+      headers: { 
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Accept': 'application/json'
+      },
       cache: 'no-store'
     });
-    if (!response.ok) throw new Error('API health check failed');
+    
     const data = await response.json();
     isDbConnected = data.dbConnected;
     inProgressRequests.delete(requestId);

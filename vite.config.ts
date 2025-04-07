@@ -18,16 +18,24 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:3030',
         changeOrigin: true,
         secure: false,
+        ws: true, // Enable WebSocket proxy
         rewrite: (path) => path,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
             console.log('proxy error', err);
           });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // Set proper headers for JSON content
+            proxyReq.setHeader('Accept', 'application/json');
+            proxyReq.setHeader('Content-Type', 'application/json');
             console.log('Proxying request:', req.method, req.url);
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log('Proxy response:', proxyRes.statusCode, req.url);
+            // Force JSON content type for health endpoint
+            if (req.url.includes('/health')) {
+              proxyRes.headers['content-type'] = 'application/json';
+            }
+            console.log('Proxy response:', proxyRes.statusCode, req.url, 'Content-Type:', proxyRes.headers['content-type']);
           });
         }
       }
@@ -45,7 +53,19 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:3030',
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path
+        ws: true, // Enable WebSocket proxy
+        rewrite: (path) => path,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            // Force JSON content type for health endpoint
+            if (req.url.includes('/health')) {
+              proxyRes.headers['content-type'] = 'application/json';
+            }
+          });
+        }
       }
     }
   },

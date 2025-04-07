@@ -28,7 +28,7 @@ console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// CORS configuration
+// CORS configuration - extended to accept requests from Lovable preview domains
 app.use(cors({
   origin: [
     `http://localhost:${DEV_PORT}`, 
@@ -46,13 +46,19 @@ app.use(cors({
   credentials: true
 }));
 
+// Middleware to set JSON content type for all API responses
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
 // Health check route - independent of database
 app.get('/api/health', (req, res) => {
   // Respond even if database isn't connected
   const dbStatus = db.isConnected();
   console.log(`Health check called - Database connected: ${dbStatus}`);
   
-  res.json({ 
+  res.status(200).json({ 
     status: 'ok', 
     server: true,
     dbConnected: dbStatus,
@@ -66,12 +72,6 @@ db.initDatabase().then(connected => {
   console.log(`Database ${connected ? 'connected successfully' : 'connection failed'}`);
 }).catch(err => {
   console.error('Database initialization error:', err);
-});
-
-// Always set JSON content type for API responses
-app.use('/api', (req, res, next) => {
-  res.setHeader('Content-Type', 'application/json');
-  next();
 });
 
 // API routes

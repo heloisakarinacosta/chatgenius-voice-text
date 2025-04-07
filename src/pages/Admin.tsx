@@ -73,11 +73,8 @@ const Admin = () => {
 
   // Get API URL for health check based on environment
   const getApiHealthUrl = () => {
-    if (process.env.NODE_ENV === 'production') {
-      return '/api/health'; // Use relative URL in production
-    } else {
-      return `http://localhost:${DEV_PORT}/api/health`;
-    }
+    // Use the proxy URL to ensure we're going through the same path
+    return '/api/health';
   };
 
   // Refresh page to check connection status
