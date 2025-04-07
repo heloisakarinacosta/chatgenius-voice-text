@@ -28,14 +28,14 @@ export default defineConfig(({ mode }) => ({
             // Set proper headers for JSON content
             proxyReq.setHeader('Accept', 'application/json');
             proxyReq.setHeader('Content-Type', 'application/json');
-            console.log('Proxying request:', req.method, req.url);
+            console.log('Proxying request:', req.method, req.url || '');
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
             // Force JSON content type for health endpoint
-            if (req.url.includes('/health')) {
+            if (req.url && req.url.includes('/health')) {
               proxyRes.headers['content-type'] = 'application/json';
             }
-            console.log('Proxy response:', proxyRes.statusCode, req.url, 'Content-Type:', proxyRes.headers['content-type']);
+            console.log('Proxy response:', proxyRes.statusCode, req.url || '', 'Content-Type:', proxyRes.headers['content-type']);
           });
         }
       }
@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => ({
           });
           proxy.on('proxyRes', (proxyRes, req, _res) => {
             // Force JSON content type for health endpoint
-            if (req.url.includes('/health')) {
+            if (req.url && req.url.includes('/health')) {
               proxyRes.headers['content-type'] = 'application/json';
             }
           });
