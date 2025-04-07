@@ -1,3 +1,4 @@
+
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
@@ -6,6 +7,7 @@ const path = require('path');
 let pool = null;
 let isDbConnected = false;
 let lastConnectionError = null;
+let connectionInProgress = false;
 
 // Ensure data directory exists
 const ensureDataDirectory = () => {
@@ -41,6 +43,14 @@ const getDbConfig = () => {
 
 // Initialize database connection pool
 const initDatabase = async () => {
+  // Prevent multiple simultaneous connection attempts
+  if (connectionInProgress) {
+    console.log('Database connection attempt already in progress, skipping');
+    return isDbConnected;
+  }
+  
+  connectionInProgress = true;
+  
   try {
     // Ensure the data directory exists for fallback storage
     ensureDataDirectory();
@@ -51,7 +61,7 @@ const initDatabase = async () => {
     console.log('User:', dbConfig.user);
     console.log('Database:', dbConfig.database);
     
-    // Create database connection pool
+    // Create database connection pool with timeout
     pool = mysql.createPool({
       host: dbConfig.host,
       user: dbConfig.user,
@@ -59,12 +69,14 @@ const initDatabase = async () => {
       database: dbConfig.database,
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0
+      queueLimit: 0,
+      connectTimeout: 10000, // 10 second timeout
+      acquireTimeout: 10000
     });
     
     console.log('Database pool initialized');
     
-    // Verify connection
+    // Verify connection with timeout
     const connection = await pool.getConnection();
     console.log('Database connected successfully');
     connection.release();
@@ -74,6 +86,7 @@ const initDatabase = async () => {
     
     isDbConnected = true;
     lastConnectionError = null;
+    connectionInProgress = false;
     return true;
   } catch (error) {
     console.error('Database connection error:', error);
@@ -90,10 +103,14 @@ const initDatabase = async () => {
     } else if (error.code === 'ECONNREFUSED') {
       console.error('CONNECTION REFUSED: Make sure your MySQL/MariaDB server is running');
       console.error('Check if the server is running and accessible at the configured host and port');
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
+      console.error('CONNECTION TIMEOUT: Database server did not respond in time');
+      console.error('Check network connectivity and server load');
     }
     
     console.log('Using file-based fallback data storage');
     isDbConnected = false;
+    connectionInProgress = false;
     return false;
   }
 };

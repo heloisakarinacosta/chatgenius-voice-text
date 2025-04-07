@@ -24,7 +24,11 @@ const isProduction = process.env.NODE_ENV === 'production';
 console.log(`Running in ${isProduction ? 'production' : 'development'} mode`);
 console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 
-// Middleware
+// Middleware setup before routes
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// CORS configuration
 app.use(cors({
   origin: [
     `http://localhost:${DEV_PORT}`, 
@@ -38,20 +42,30 @@ app.use(cors({
     /\.lovableproject\.com$/
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Initialize database
-db.initDatabase().then(connected => {
-  console.log(`Database ${connected ? 'connected successfully' : 'connection failed'}`);
+// Health check route - independent of database
+app.get('/api/health', (req, res) => {
+  // Respond even if database isn't connected
+  const dbStatus = db.isConnected();
+  console.log(`Health check called - Database connected: ${dbStatus}`);
+  
+  res.json({ 
+    status: 'ok', 
+    server: true,
+    dbConnected: dbStatus,
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: err.message || 'Internal Server Error' });
+// Initialize database after setting up basic routes
+console.log('Initializing database connection...');
+db.initDatabase().then(connected => {
+  console.log(`Database ${connected ? 'connected successfully' : 'connection failed'}`);
+}).catch(err => {
+  console.error('Database initialization error:', err);
 });
 
 // Always set JSON content type for API responses
@@ -67,9 +81,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/conversation', conversationRoutes);
 app.use('/api/training', trainingRoutes);
 
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', dbConnected: db.isConnected() });
+// Error handling middleware - must be after routes
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
 // Serve static files if in production

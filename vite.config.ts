@@ -38,6 +38,15 @@ export default defineConfig(({ mode }) => ({
     port: 3000,
     headers: {
       'Content-Security-Policy': "default-src 'self' http://localhost:* https://localhost:* http://191.232.33.131:* https://191.232.33.131:* https://*.openai.com https://*.googleapis.com https://*.productfruits.com; script-src 'self' https://cdn.gpteng.co https://*.googleapis.com https://*.productfruits.com 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://localhost:* http://191.232.33.131:* https://191.232.33.131:* https://*.openai.com https://api.openai.com https://*.productfruits.com wss://*.googleapis.com https://*.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.productfruits.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://* http://*; media-src 'self' blob: https://*; worker-src 'self' blob:;"
+    },
+    proxy: {
+      // In preview mode, also use proxy (for Lovable preview environment)
+      '/api': {
+        target: 'http://localhost:3030',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path
+      }
     }
   },
   plugins: [
@@ -54,7 +63,8 @@ export default defineConfig(({ mode }) => ({
     'process.env': {
       PORT: process.env.PORT || (mode === 'production' ? 3000 : 8080),
       DEV_PORT: 3030, // Development API port defined here
-      NODE_ENV: mode // Make sure NODE_ENV is properly exposed to client code
+      NODE_ENV: mode, // Make sure NODE_ENV is properly exposed to client code
+      API_BASE_URL: '/api' // Define a consistent API base URL for the client
     }
   }
 }));
