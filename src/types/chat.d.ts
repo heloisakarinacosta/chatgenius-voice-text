@@ -1,3 +1,4 @@
+
 // Types for Chat Context
 
 export interface Message {
@@ -113,7 +114,7 @@ export interface ChatContextType {
   sendMessage: (content: string) => Promise<boolean>;
   addMessage: (content: string, role: 'user' | 'assistant' | 'system') => string;
   updateMessage: (messageId: string, updatedContent: string) => void;
-  startNewConversation: () => Promise<string | null>; // Tipo correto: Promise<string | null>
+  startNewConversation: () => Promise<string | null>;
   
   // Training file methods
   addTrainingFile: (file: TrainingFile) => Promise<boolean>;

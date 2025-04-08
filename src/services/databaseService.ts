@@ -48,6 +48,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
     const headers = {
       'Accept': 'application/json',
       'Cache-Control': 'no-cache',
+      'Content-Type': 'application/json',
       'Origin': window.location.origin,
       ...(options.headers || {})
     };
@@ -143,7 +144,8 @@ export const initDatabase = async () => {
       const optionsResp = await fetch(`${API_BASE_URL}/health${cacheBuster}`, {
         method: 'OPTIONS',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
         }
       });
       
@@ -169,7 +171,8 @@ export const initDatabase = async () => {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           },
           cache: 'no-store'
         });
@@ -247,6 +250,7 @@ export const getDbConnection = async () => {
         'Pragma': 'no-cache',
         'Expires': '0',
         'Accept': 'application/json',
+        'Content-Type': 'application/json',
         'Origin': window.location.origin
       },
       cache: 'no-store'
