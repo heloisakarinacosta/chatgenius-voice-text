@@ -28,21 +28,9 @@ console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// CORS configuration - expanded to properly handle all origins in development
+// CORS configuration - Simplified and more permissive for development
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Allow all localhost origins and lovable domains
-    if (origin.includes('localhost') || 
-        origin.includes('127.0.0.1') || 
-        origin.includes('lovableproject.com')) {
-      return callback(null, true);
-    }
-    
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: '*', // Allow all origins in development
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'Expires'],
   credentials: true,
@@ -56,7 +44,7 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('origin') || 'unknown'}`);
   
   // Add response headers for CORS
-  res.header('Access-Control-Allow-Origin', req.get('origin') || '*');
+  res.header('Access-Control-Allow-Origin', '*'); // More permissive for development
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -116,13 +104,17 @@ app.get('/api/health', (req, res) => {
          'Content-Type': 'application/json',
          'Cache-Control': 'no-cache, no-store, must-revalidate',
          'Pragma': 'no-cache',
-         'Expires': '0'
+         'Expires': '0',
+         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
        })
        .json(response);
   } catch (error) {
     console.error('Error in health check endpoint:', error);
     res.status(500)
-       .set('Content-Type', 'application/json')
+       .set({
+         'Content-Type': 'application/json',
+         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+       })
        .json({ 
          status: 'error', 
          message: 'Internal server error during health check',
@@ -150,7 +142,10 @@ app.use('/api/training', trainingRoutes);
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500)
-     .set('Content-Type', 'application/json')
+     .set({
+       'Content-Type': 'application/json',
+       'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+     })
      .json({ error: err.message || 'Internal Server Error' });
 });
 
@@ -176,7 +171,10 @@ if (isProduction) {
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
     res.status(404)
-       .set('Content-Type', 'application/json')
+       .set({
+         'Content-Type': 'application/json',
+         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+       })
        .json({ error: 'API route not found' });
   } else if (isProduction) {
     // In production, redirect to index.html for client-side routing
@@ -184,7 +182,10 @@ app.use((req, res, next) => {
   } else {
     // In development, just send a 404
     res.status(404)
-       .set('Content-Type', 'application/json')
+       .set({
+         'Content-Type': 'application/json',
+         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+       })
        .json({ error: 'Route not found' });
   }
 });

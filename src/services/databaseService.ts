@@ -7,8 +7,12 @@ const getApiBaseUrl = () => {
     // In production, we should use a relative URL to ensure requests go to the same server
     return '/api';
   } else {
-    // In development, use the proxy defined in vite.config.ts
-    return '/api';
+    // In development, use the direct URL to the backend server
+    // Add a conditional check for remote development environment (lovable.dev)
+    if (window.location.hostname.includes('lovableproject.com')) {
+      return 'http://localhost:3030/api';  // Connect directly to local backend
+    }
+    return '/api';  // Use vite proxy in local development
   }
 };
 
@@ -41,6 +45,9 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   try {
     console.log(`Fetching from URL: ${url}`);
     
+    // If we're on lovableproject.com, disable credentials mode and allow CORS
+    const credentials = window.location.hostname.includes('lovableproject.com') ? 'omit' : 'include';
+    
     // Ensure we always set the proper headers
     const headers = {
       'Accept': 'application/json',
@@ -53,8 +60,10 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
       ...options, 
       signal,
       headers,
-      // Ensure credentials are included
-      credentials: 'include'
+      // Credentials depends on environment
+      credentials,
+      // Add mode: 'cors' for cross-origin requests
+      mode: 'cors'
     });
     
     clearTimeout(timeoutId);
@@ -654,7 +663,42 @@ export const getDbConnection = async () => {
     inProgressRequests.add(requestId);
     // Add cache busting parameter
     const cacheBuster = `?_=${Date.now()}`;
-    const response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
+    
+    // For lovableproject.com, use direct localhost URL and mode: 'cors'
+    const url = `${API_BASE_URL}/health${cacheBuster}`;
+    console.log(`Checking database connection at: ${url}`);
+    
+    // Special handling for lovableproject.com
+    if (window.location.hostname.includes('lovableproject.com')) {
+      try {
+        // Use fetch directly with mode: 'cors' and credentials: 'omit'
+        const response = await fetch(url, {
+          headers: { 
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          },
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Health check failed: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Health check response:', data);
+        isDbConnected = data.dbConnected && data.status === 'ok';
+        inProgressRequests.delete(requestId);
+        return data.dbConnected;
+      } catch (error) {
+        console.error('Error checking database connection:', error);
+        isDbConnected = false;
+        inProgressRequests.delete(requestId);
+        return false;
+      }
+    }
+    
+    const response = await fetchWithTimeout(url, {
       headers: { 
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
