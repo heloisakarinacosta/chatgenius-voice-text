@@ -1,19 +1,23 @@
-
 import * as localDb from './localStorageDb';
 import { WidgetConfig, AgentConfig, AdminConfig, Message, Conversation, TrainingFile } from "@/types/chat";
 
 // Enhanced API base URL function that robustly handles both development and production environments
 const getApiBaseUrl = () => {
+  // For remote environments like lovableproject.com - use absolute URL
+  if (window.location.hostname.includes('.lovableproject.com')) {
+    // Use window.location.origin for the same domain
+    return `${window.location.origin}/api`;
+  }
+  
+  // For Gitpod or Codespaces development
+  if (window.location.hostname.includes('.gitpod.io') || 
+      window.location.hostname.includes('.codespaces.')) {
+    return '/api'; // Use proxy in these environments
+  }
+  
   // In production mode, use relative URL to ensure requests go to the same server
   if (process.env.NODE_ENV === 'production') {
     return '/api';
-  }
-  
-  // For development - check if in Lovable remote environment
-  if (window.location.hostname.includes('.lovableproject.com') || 
-      window.location.hostname.includes('.gitpod.io') ||
-      window.location.hostname.includes('.codespaces.')) {
-    return '/api'; // Use vite proxy in remote development
   }
   
   // For local development
@@ -66,7 +70,8 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
       ...options, 
       signal,
       headers,
-      credentials
+      credentials,
+      mode: 'cors'
     });
     
     clearTimeout(timeoutId);
