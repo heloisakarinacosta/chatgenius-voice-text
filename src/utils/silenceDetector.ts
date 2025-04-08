@@ -86,7 +86,7 @@ class SilenceDetector {
       
       // Configurações otimizadas para detecção de voz
       this.analyser.fftSize = 1024; // Mais detalhado para melhor análise de frequência
-      this.analyser.smoothingTimeConstant = 0.5; // Boa suavização sem perder resposta rápida
+      this.analyser.smoothingTimeConstant = 0.2; // Reduzido para resposta mais rápida
       
       // Filtro passa-alta para reduzir ruídos de baixa frequência
       const highpassFilter = this.audioContext.createBiquadFilter();
@@ -149,7 +149,7 @@ class SilenceDetector {
       const voiceAverage = voiceSum / (voiceCount || 1);
       
       // Dar mais peso à faixa de voz humana
-      const weightedAverage = (voiceAverage * 0.8) + (average * 0.2);
+      const weightedAverage = (voiceAverage * 0.7) + (average * 0.3);
       const normalizedValue = weightedAverage / 256; // Normalizar para 0-1
       
       // Adicionar ao histórico de níveis
@@ -165,7 +165,7 @@ class SilenceDetector {
       const recentAverage = recentLevels.reduce((sum, level) => sum + level, 0) / recentLevels.length;
       
       // Detecção de voz com histerese
-      if (recentAverage > this.minVoiceLevel + 0.2) {
+      if (recentAverage > this.minVoiceLevel) {
         if (!this.voiceDetected) {
           this.log(`Voice detected with level: ${recentAverage.toFixed(2)}`);
           
@@ -179,7 +179,7 @@ class SilenceDetector {
       }
       
       // Log de amostra a cada 1 segundo
-      if (Date.now() % 1000 < 50) {
+      if (Math.random() < 0.05) {
         this.log(
           `Audio levels: weighted=${recentAverage.toFixed(2)}, ` +
           `voice=${voiceAverage.toFixed(2)}, ` +
@@ -218,7 +218,7 @@ class SilenceDetector {
     const isSilent = avgLevel < this.silenceThreshold;
     
     // Log detalhado a cada segundo
-    if (currentTime % 1000 < 50) {
+    if (Math.random() < 0.05) {
       this.log(
         `Silence check: avgLevel=${avgLevel.toFixed(2)}, ` +
         `threshold=${this.silenceThreshold}, ` +
@@ -253,7 +253,7 @@ class SilenceDetector {
         this.voiceDetected && 
         recordingLength > this.minRecordingDuration && 
         (this.consecutiveSilenceCount >= this.consecutiveSilenceThreshold || 
-         elapsedSilence > this.silenceDuration * 1.5)) {
+         elapsedSilence > this.silenceDuration)) {
       
       this.log(`Sufficient silence detected in continuous mode: ${this.consecutiveSilenceCount} samples or ${elapsedSilence}ms`);
       this.log(`Recording length: ${recordingLength}ms, minimum: ${this.minRecordingDuration}ms`);

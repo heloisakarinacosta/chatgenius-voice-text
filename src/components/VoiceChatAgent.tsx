@@ -22,11 +22,11 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
 ];
 
-const SILENCE_THRESHOLD = 0.5;
-const MIN_VOICE_LEVEL = 0.8;
-const MIN_RECORDING_DURATION = 1000;
+const SILENCE_THRESHOLD = 0.4;
+const MIN_VOICE_LEVEL = 0.7;
+const MIN_RECORDING_DURATION = 750;
 const VOICE_DETECTION_TIMEOUT = 8000;
-const CONSECUTIVE_SILENCE_THRESHOLD = 5;
+const CONSECUTIVE_SILENCE_THRESHOLD = 4;
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -76,12 +76,12 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.8;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.6;
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
-  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.1;
-  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.05;
-  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.5;
-  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.2;
+  const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.05;
+  const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.03;
+  const waitWithoutPunctuation = agentConfig?.voice?.waitWithoutPunctuation || 0.2;
+  const waitAfterNumber = agentConfig?.voice?.waitAfterNumber || 0.1;
   const endCallMessage = agentConfig?.voice?.endCallMessage || "Encerrando chamada por inatividade. Obrigado pela conversa.";
   const continuousModeEnabled = agentConfig?.voice?.continuousMode !== undefined 
     ? agentConfig?.voice?.continuousMode 
@@ -213,7 +213,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
       analyserRef.current = analyser;
       
       analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.4;
+      analyser.smoothingTimeConstant = 0.2;
       
       const highpassFilter = audioContext.createBiquadFilter();
       highpassFilter.type = "highpass";
@@ -242,6 +242,8 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD,
         continuousModeEnabled: continuousModeEnabled
       });
+      
+      silenceDetector.setDebugMode(true);
       
       console.log("Análise de áudio configurada com sucesso");
     } catch (error) {
@@ -472,7 +474,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           gainNode.connect(audioContextRef.current?.destination || gainNode);
           
           oscillator.start();
-          oscillator.stop(audioContextRef.current?.currentTime || 0 + 0.2);
+          oscillator.stop(audioContextRef.current?.currentTime || 0 + 0.15);
         }
       } catch (e) {
         console.error("Error starting oscillator:", e);

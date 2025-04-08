@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw, BookOpen } from "lucide-react";
+import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw, BookOpen, Mic } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -176,6 +176,24 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
             
             {showAdvanced && (
               <div className="space-y-4 mt-2">
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex items-center space-x-2">
+                    <Mic className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="continuous-mode" className="text-sm text-muted-foreground">
+                      Modo contínuo
+                    </Label>
+                  </div>
+                  <Switch
+                    id="continuous-mode"
+                    checked={true}
+                    defaultChecked={true}
+                    aria-readonly={true}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Permite que o assistente responda mesmo enquanto você está falando
+                </p>
+                
                 <div className="flex items-center justify-between space-x-2">
                   <div className="flex items-center space-x-2">
                     <BookOpen className="h-4 w-4 text-muted-foreground" />
