@@ -6,6 +6,7 @@ interface SilenceDetectorConfig {
   minRecordingDuration: number;
   consecutiveSilenceThreshold: number;
   continuousModeEnabled?: boolean;
+  debugMode?: boolean;
 }
 
 class SilenceDetector {
@@ -21,6 +22,7 @@ class SilenceDetector {
   private animationFrameId: number | null = null;
   private silenceCallback: (() => void) | null = null;
   private checkSilenceIntervalId: number | null = null;
+  private onAudioLevelUpdate: ((levels: number[], overallLevel: number) => void) | null = null;
   
   // Configurações
   private silenceThreshold: number = 0.5;
@@ -36,7 +38,8 @@ class SilenceDetector {
   initialize(
     stream: MediaStream, 
     silenceCallback: () => void, 
-    config?: Partial<SilenceDetectorConfig>
+    config?: Partial<SilenceDetectorConfig>,
+    onAudioLevelUpdate?: (levels: number[], overallLevel: number) => void
   ) {
     // Limpar recursos anteriores se existirem
     this.cleanup();
@@ -48,10 +51,12 @@ class SilenceDetector {
       this.minRecordingDuration = config.minRecordingDuration ?? this.minRecordingDuration;
       this.consecutiveSilenceThreshold = config.consecutiveSilenceThreshold ?? this.consecutiveSilenceThreshold;
       this.continuousMode = config.continuousModeEnabled ?? this.continuousMode;
+      this.debugMode = config.debugMode ?? this.debugMode;
     }
     
     this.stream = stream;
     this.silenceCallback = silenceCallback;
+    this.onAudioLevelUpdate = onAudioLevelUpdate || null;
     this.recordingStartTime = Date.now();
     this.silenceStartTime = Date.now();
     this.audioLevels = [];
@@ -69,7 +74,8 @@ class SilenceDetector {
       silenceDuration: this.silenceDuration,
       minRecordingDuration: this.minRecordingDuration,
       consecutiveSilenceThreshold: this.consecutiveSilenceThreshold,
-      continuousMode: this.continuousMode
+      continuousMode: this.continuousMode,
+      debugMode: this.debugMode
     });
   }
   
@@ -121,7 +127,7 @@ class SilenceDetector {
     
     // Monitorar níveis de áudio continuamente
     const checkAudioLevel = () => {
-      if (!this.analyser || !this.dataArray) return;
+      if (!this.analyser || !this.dataArray || !this.initialized) return;
       
       this.analyser.getByteFrequencyData(this.dataArray);
       
@@ -153,7 +159,8 @@ class SilenceDetector {
       const normalizedValue = weightedAverage / 256; // Normalizar para 0-1
       
       // Adicionar ao histórico de níveis
-      this.audioLevels.push(normalizedValue * 6); // Amplificamos o valor para ter melhor sensibilidade
+      const amplifiedValue = normalizedValue * 6; // Amplificamos o valor para ter melhor sensibilidade
+      this.audioLevels.push(amplifiedValue); 
       
       // Manter apenas os últimos N níveis
       if (this.audioLevels.length > 20) {
@@ -178,6 +185,31 @@ class SilenceDetector {
         this.silenceStartTime = Date.now();
       }
       
+      // Preparar dados de nível de áudio para visualização
+      if (this.onAudioLevelUpdate) {
+        // Preparar níveis para visualização (30 barras)
+        const levelCount = 30;
+        const levelData = Array(levelCount).fill(0);
+        const freqStep = Math.floor(this.dataArray!.length / levelCount);
+        
+        for (let i = 0; i < levelCount; i++) {
+          const start = i * freqStep;
+          const end = (i + 1) * freqStep;
+          let sum = 0;
+          
+          for (let j = start; j < end && j < this.dataArray!.length; j++) {
+            sum += this.dataArray![j];
+          }
+          
+          // Normalizar e amplificar para melhor visualização
+          const normalizedValue = (sum / (end - start)) / 256;
+          levelData[i] = Math.min(1, normalizedValue * 8);
+        }
+        
+        // Chamar callback com dados de nível de áudio
+        this.onAudioLevelUpdate(levelData, recentAverage);
+      }
+      
       // Log de amostra a cada 1 segundo
       if (Math.random() < 0.05) {
         this.log(
@@ -196,10 +228,10 @@ class SilenceDetector {
     // Iniciar loop de monitoramento
     this.animationFrameId = requestAnimationFrame(checkAudioLevel);
     
-    // Verificar silêncio em intervalos regulares
+    // Verificar silêncio em intervalos mais frequentes (30ms em vez de 50ms)
     this.checkSilenceIntervalId = window.setInterval(() => {
       this.checkForSilence();
-    }, 50) as unknown as number;
+    }, 30) as unknown as number;
   }
   
   private checkForSilence() {
@@ -344,6 +376,7 @@ class SilenceDetector {
     this.initialized = false;
     this.silenceCallback = null;
     this.dataArray = null;
+    this.onAudioLevelUpdate = null;
     
     // Manter audioLevels e voiceDetected para consulta posterior
   }

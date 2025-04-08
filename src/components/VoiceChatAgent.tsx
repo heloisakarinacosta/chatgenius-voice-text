@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,11 +23,12 @@ const VOICES = [
   { id: 'shimmer', name: 'Shimmer (Feminino Jovem)' }
 ];
 
-const SILENCE_THRESHOLD = 0.4;
-const MIN_VOICE_LEVEL = 0.7;
+// Valores padrão para detecção de silêncio, otimizados para conversação
+const SILENCE_THRESHOLD = 0.3; // Reduzido para ser mais sensível
+const MIN_VOICE_LEVEL = 0.5; // Reduzido para detectar voz mais facilmente
 const MIN_RECORDING_DURATION = 750;
 const VOICE_DETECTION_TIMEOUT = 8000;
-const CONSECUTIVE_SILENCE_THRESHOLD = 4;
+const CONSECUTIVE_SILENCE_THRESHOLD = 3; // Reduzido para responder mais rápido
 
 interface VoiceChatAgentProps {
   apiKey: string;
@@ -42,6 +44,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(30).fill(0));
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [isMicrophoneAvailable, setIsMicrophoneAvailable] = useState<boolean | null>(null);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -76,7 +79,7 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     updateAgentConfig
   } = useChat();
 
-  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.6;
+  const silenceTimeout = agentConfig?.voice?.silenceTimeout || 0.5; // Reduzido de 0.6 para 0.5
   const maxCallDuration = agentConfig?.voice?.maxCallDuration || 1800;
   const waitBeforeSpeaking = agentConfig?.voice?.waitBeforeSpeaking || 0.05;
   const waitAfterPunctuation = agentConfig?.voice?.waitAfterPunctuation || 0.03;
@@ -196,130 +199,14 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
     return cleanupResources;
   }, [apiKey]);
 
-  const setupAudioAnalysis = (stream: MediaStream) => {
-    try {
-      if (audioContextRef.current) {
-        try {
-          audioContextRef.current.close();
-        } catch (e) {
-          console.error("Erro ao fechar contexto de áudio anterior:", e);
-        }
-      }
-      
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyser = audioContext.createAnalyser();
-      
-      audioContextRef.current = audioContext;
-      analyserRef.current = analyser;
-      
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.2;
-      
-      const highpassFilter = audioContext.createBiquadFilter();
-      highpassFilter.type = "highpass";
-      highpassFilter.frequency.value = 85;
-      
-      const microphone = audioContext.createMediaStreamSource(stream);
-      microphone.connect(highpassFilter);
-      highpassFilter.connect(analyser);
-      
-      setAudioLevels(Array(30).fill(0));
-      setAudioLevel(0);
-      
-      visualizeAudio();
-      
-      silenceDetector.initialize(stream, () => {
-        console.log("Silence detector triggered automatic stop");
-        if (isRecording && !stoppingRecording && !processingAudioRef.current) {
-          processingAudioRef.current = true;
-          stopRecording(false);
-        }
-      }, {
-        silenceThreshold: SILENCE_THRESHOLD,
-        minVoiceLevel: MIN_VOICE_LEVEL,
-        silenceDuration: SILENCE_DURATION,
-        minRecordingDuration: MIN_RECORDING_DURATION,
-        consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD,
-        continuousModeEnabled: continuousModeEnabled
-      });
-      
-      silenceDetector.setDebugMode(true);
-      
-      console.log("Análise de áudio configurada com sucesso");
-    } catch (error) {
-      console.error("Erro ao configurar análise de áudio:", error);
-    }
-  };
-
-  const visualizeAudio = () => {
-    if (!analyserRef.current) {
-      console.log("Analisador não está disponível para visualização");
-      return;
-    }
+  // Função de atualização dos níveis de áudio para visualização
+  const updateAudioLevels = (levels: number[], overallLevel: number) => {
+    setAudioLevels(levels);
+    setAudioLevel(overallLevel * 100); // Converter para porcentagem
     
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const updateVisualization = () => {
-      if (!analyserRef.current || !isRecording) {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-          animationFrameRef.current = null;
-        }
-        return;
-      }
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      let voiceSum = 0;
-      let voiceCount = 0;
-      
-      const startBin = Math.floor(85 / (22050 / (bufferLength * 2))); 
-      const endBin = Math.floor(255 / (22050 / (bufferLength * 2)));
-      
-      for (let i = startBin; i < endBin && i < bufferLength; i++) {
-        voiceSum += dataArray[i];
-        voiceCount++;
-      }
-      
-      const levelCount = 30;
-      const levelData = Array(levelCount).fill(0);
-      
-      let totalSum = 0;
-      
-      for (let i = 0; i < levelCount; i++) {
-        const start = Math.floor(i * bufferLength / levelCount);
-        const end = Math.floor((i + 1) * bufferLength / levelCount);
-        let sum = 0;
-        
-        for (let j = start; j < end; j++) {
-          sum += dataArray[j];
-          totalSum += dataArray[j];
-        }
-        
-        const normalizedValue = (sum / (end - start)) / 256;
-        levelData[i] = Math.min(1, normalizedValue * 8);
-      }
-      
-      const overallLevel = Math.min(100, (totalSum / (bufferLength * 256)) * 1000);
-      setAudioLevel(overallLevel);
-      
-      setAudioLevels(levelData);
-      
-      if (Math.random() < 0.05) {
-        console.log(`Níveis de áudio: média=${(overallLevel).toFixed(2)}, max=${Math.max(...levelData).toFixed(2)}`);
-      }
-      
-      if (isRecording) {
-        animationFrameRef.current = requestAnimationFrame(updateVisualization);
-      }
-    };
-    
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
+    if (showDebugInfo && Math.random() < 0.05) {
+      console.log(`[Audio Debug] Level: ${overallLevel.toFixed(2)}, Max: ${Math.max(...levels).toFixed(2)}`);
     }
-    animationFrameRef.current = requestAnimationFrame(updateVisualization);
   };
 
   const startRecording = async () => {
@@ -376,7 +263,28 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
         }
       }, 1000);
       
-      setupAudioAnalysis(stream);
+      // Inicializar detector de silêncio com as configurações otimizadas
+      silenceDetector.initialize(
+        stream, 
+        () => {
+          console.log("Silence detector triggered automatic stop");
+          if (isRecording && !stoppingRecording && !processingAudioRef.current) {
+            processingAudioRef.current = true;
+            stopRecording(false);
+          }
+        }, 
+        {
+          silenceThreshold: SILENCE_THRESHOLD,
+          minVoiceLevel: MIN_VOICE_LEVEL,
+          silenceDuration: SILENCE_DURATION,
+          minRecordingDuration: MIN_RECORDING_DURATION,
+          consecutiveSilenceThreshold: CONSECUTIVE_SILENCE_THRESHOLD,
+          continuousModeEnabled: continuousModeEnabled,
+          debugMode: showDebugInfo
+        },
+        updateAudioLevels // Callback para atualizar os níveis de áudio
+      );
+      
       setIsRecording(true);
       
       const mediaRecorder = new MediaRecorder(stream, { 
@@ -671,6 +579,15 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           processingAudioRef.current = false;
           setStoppingRecording(false);
           currentStreamingMessageId.current = null;
+          
+          // Reinicia a gravação automaticamente após um breve intervalo
+          if (continuousModeEnabled) {
+            setTimeout(() => {
+              if (!isRecording && !stoppingRecording && !isProcessing) {
+                startRecording();
+              }
+            }, 1500);
+          }
         },
         onError: (error) => {
           console.error("Error getting streaming response:", error);
@@ -847,8 +764,21 @@ const VoiceChatAgent: React.FC<VoiceChatAgentProps> = ({ apiKey }) => {
           <span className="text-xs text-muted-foreground">
             {isRecording ? "Gravando..." : isPlaying ? "Reproduzindo..." : "Níveis de áudio"}
           </span>
+          {isRecording && audioLevel > 0 && (
+            <span className="text-xs text-green-500 ml-auto">
+              {audioLevel.toFixed(0)}%
+            </span>
+          )}
         </div>
         {renderWaveform()}
+        
+        {showDebugInfo && isRecording && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            <p>Voz detectada: {silenceDetector.hasVoiceBeenDetected() ? 'Sim' : 'Não'}</p>
+            <p>Contagem de silêncio: {silenceDetector.getConsecutiveSilenceCount()}/{CONSECUTIVE_SILENCE_THRESHOLD}</p>
+            <p>Nível de áudio: {audioLevel.toFixed(1)}%</p>
+          </div>
+        )}
       </div>
       
       {showSettings && (

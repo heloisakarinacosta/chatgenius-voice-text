@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw, BookOpen, Mic } from "lucide-react";
+import { Settings, VolumeX, Volume1, Volume2, Clock, Database, RefreshCw, BookOpen, Mic, Eye } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -56,6 +56,7 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isRagEnabled, setIsRagEnabled] = useState(true);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   const VolumeIcon = volume === 0 
     ? VolumeX 
@@ -207,6 +208,23 @@ export const VoiceControls: React.FC<VoiceControlsProps> = ({
                     onCheckedChange={toggleRagSystem}
                   />
                 </div>
+                
+                <div className="flex items-center justify-between space-x-2">
+                  <div className="flex items-center space-x-2">
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="debug-mode" className="text-sm text-muted-foreground">
+                      Modo debug
+                    </Label>
+                  </div>
+                  <Switch
+                    id="debug-mode"
+                    checked={showDebugInfo}
+                    onCheckedChange={setShowDebugInfo}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Mostra informações detalhadas sobre níveis de áudio e detecção de voz
+                </p>
                 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
