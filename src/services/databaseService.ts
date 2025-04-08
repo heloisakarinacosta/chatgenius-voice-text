@@ -9,7 +9,14 @@ const getApiBaseUrl = () => {
     return '/api';
   }
   
-  // For development
+  // For development - check if in Lovable remote environment
+  if (window.location.hostname.includes('.lovableproject.com') || 
+      window.location.hostname.includes('.gitpod.io') ||
+      window.location.hostname.includes('.codespaces.')) {
+    return '/api'; // Use vite proxy in remote development
+  }
+  
+  // For local development
   return '/api';  // Use vite proxy in local development
 };
 
@@ -140,14 +147,18 @@ export const initDatabase = async (): Promise<boolean> => {
     // Add cache busting parameter
     const cacheBuster = `?_=${Date.now()}`;
     
+    // Always try a simple options request to check CORS first
+    console.log('Checking CORS with OPTIONS request');
     try {
       // First, try a simple options request to check CORS
       const optionsResp = await fetch(`${API_BASE_URL}/health${cacheBuster}`, {
         method: 'OPTIONS',
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
+        mode: 'cors'
       });
       
       if (optionsResp.ok) {
@@ -173,15 +184,18 @@ export const initDatabase = async (): Promise<boolean> => {
             'Pragma': 'no-cache',
             'Expires': '0',
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Origin': window.location.origin
           },
-          cache: 'no-store'
+          cache: 'no-store',
+          mode: 'cors'
         });
         break; // Success, exit the retry loop
       } catch (fetchError) {
         retryCount++;
+        console.log(`Fetch attempt ${retryCount} failed:`, fetchError.message);
         if (retryCount <= maxFetchRetries) {
-          console.log(`Fetch attempt ${retryCount} failed, retrying...`);
+          console.log(`Retrying... (attempt ${retryCount} of ${maxFetchRetries})`);
           await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between retries
         } else {
           throw fetchError; // Re-throw after all retries failed
