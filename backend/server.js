@@ -28,64 +28,107 @@ console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// CORS configuration - extended to accept requests from Lovable preview domains
+// CORS configuration - expanded to properly handle all origins in development
 app.use(cors({
-  origin: [
-    `http://localhost:${DEV_PORT}`, 
-    'http://localhost:8081',
-    'http://localhost:3000',
-    'http://localhost:8080', 
-    'https://localhost:3000',
-    'http://191.232.33.131:3000',
-    'https://191.232.33.131:3000',
-    // Add wildcard to accept requests from lovable preview domains
-    /\.lovableproject\.com$/
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow all localhost origins and lovable domains
+    if (origin.includes('localhost') || 
+        origin.includes('127.0.0.1') || 
+        origin.includes('lovableproject.com')) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'Expires'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
-// Middleware to set JSON content type for all API responses
-app.use('/api', (req, res, next) => {
-  res.set('Content-Type', 'application/json');
+// Add debug headers middleware
+app.use((req, res, next) => {
+  // Log all incoming requests
+  console.log(`${req.method} ${req.path} - Origin: ${req.get('origin') || 'unknown'}`);
+  
+  // Add response headers for CORS
+  res.header('Access-Control-Allow-Origin', req.get('origin') || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Set JSON content type for all API responses
+  if (req.path.startsWith('/api')) {
+    res.set('Content-Type', 'application/json');
+  }
+  
   next();
+});
+
+// Handle preflight OPTIONS requests
+app.options('*', (req, res) => {
+  console.log(`Handling OPTIONS request for ${req.path}`);
+  res.status(204).end();
 });
 
 // Health check route - independent of database
 app.get('/api/health', (req, res) => {
-  // Get database connection details for diagnosis
-  const dbStatus = db.isConnected ? db.isConnected() : false;
-  const lastError = db.getLastConnectionError ? db.getLastConnectionError() : null;
-  
-  console.log(`Health check called - Database connected: ${dbStatus}`);
-  
-  // Format error for safe JSON response
-  let errorInfo = null;
-  if (lastError) {
-    errorInfo = {
-      code: lastError.code || 'UNKNOWN_ERROR',
-      message: lastError.message || 'Unknown database error',
-      sqlMessage: lastError.sqlMessage || null,
-      sqlState: lastError.sqlState || null
+  try {
+    // Get database connection details for diagnosis
+    const dbStatus = db.isConnected ? db.isConnected() : false;
+    const lastError = db.getLastConnectionError ? db.getLastConnectionError() : null;
+    
+    console.log(`Health check called - Database connected: ${dbStatus}`);
+    
+    // Format error for safe JSON response
+    let errorInfo = null;
+    if (lastError) {
+      errorInfo = {
+        code: lastError.code || 'UNKNOWN_ERROR',
+        message: lastError.message || 'Unknown database error',
+        sqlMessage: lastError.sqlMessage || null,
+        sqlState: lastError.sqlState || null
+      };
+      console.log('Last DB connection error:', errorInfo);
+    }
+    
+    // Enhanced response with detailed error information
+    const response = { 
+      status: 'ok', 
+      server: true,
+      dbConnected: dbStatus,
+      environment: process.env.NODE_ENV || 'development',
+      dbConfig: {
+        host: process.env.DB_HOST || process.env.DEV_DB_HOST || '(not set)',
+        database: process.env.DB_NAME || process.env.DEV_DB_NAME || '(not set)',
+        user: process.env.DB_USER || process.env.DEV_DB_USER || '(not set)'
+      },
+      dbError: errorInfo
     };
-    console.log('Last DB connection error:', errorInfo);
+    
+    // Send the response with proper JSON headers
+    res.status(200)
+       .set({
+         'Content-Type': 'application/json',
+         'Cache-Control': 'no-cache, no-store, must-revalidate',
+         'Pragma': 'no-cache',
+         'Expires': '0'
+       })
+       .json(response);
+  } catch (error) {
+    console.error('Error in health check endpoint:', error);
+    res.status(500)
+       .set('Content-Type', 'application/json')
+       .json({ 
+         status: 'error', 
+         message: 'Internal server error during health check',
+         error: error.message || 'Unknown error'
+       });
   }
-  
-  // Enhanced response with detailed error information
-  res.status(200)
-     .json({ 
-        status: 'ok', 
-        server: true,
-        dbConnected: dbStatus,
-        environment: process.env.NODE_ENV || 'development',
-        dbConfig: {
-          host: process.env.DB_HOST || process.env.DEV_DB_HOST || '(not set)',
-          database: process.env.DB_NAME || process.env.DEV_DB_NAME || '(not set)',
-          user: process.env.DB_USER || process.env.DEV_DB_USER || '(not set)'
-        },
-        dbError: errorInfo
-     });
 });
 
 // Initialize database after setting up basic routes

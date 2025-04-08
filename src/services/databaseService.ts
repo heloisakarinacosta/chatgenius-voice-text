@@ -18,8 +18,8 @@ const API_BASE_URL = getApiBaseUrl();
 console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV || 'development'} environment)`);
 
 // Configuration for fetch requests
-const FETCH_TIMEOUT = 10000; // 10 seconds timeout (increased from 5)
-const MAX_RETRIES = 2;     
+const FETCH_TIMEOUT = 15000; // 15 seconds timeout (increased from 10)
+const MAX_RETRIES = 3;     
 const RETRY_DELAY = 1000;  // 1 second between retries
 
 // This file serves as a facade over actual database implementations
@@ -48,10 +48,13 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
       ...(options.headers || {})
     };
     
+    // Attempt the fetch with a timeout
     const response = await fetch(url, { 
       ...options, 
       signal,
-      headers 
+      headers,
+      // Ensure credentials are included
+      credentials: 'include'
     });
     
     clearTimeout(timeoutId);
@@ -90,6 +93,13 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
+    
+    // Add more detailed error logging
+    if (error.name === 'AbortError') {
+      console.error(`Fetch timeout after ${FETCH_TIMEOUT}ms:`, url);
+      throw new Error(`Request timed out after ${FETCH_TIMEOUT}ms`);
+    }
+    
     throw error;
   }
 };
@@ -127,27 +137,57 @@ export const initDatabase = async () => {
     
     try {
       // First, try a simple options request to check CORS
-      await fetch(`${API_BASE_URL}/health${cacheBuster}`, {
+      const optionsResp = await fetch(`${API_BASE_URL}/health${cacheBuster}`, {
         method: 'OPTIONS',
         headers: {
           'Accept': 'application/json'
-        }
+        },
+        credentials: 'include'
       });
-      console.log('OPTIONS request succeeded, CORS appears to be properly configured');
+      
+      if (optionsResp.ok) {
+        console.log('OPTIONS request succeeded, CORS appears to be properly configured');
+      } else {
+        console.warn('OPTIONS request returned status:', optionsResp.status);
+      }
     } catch (corsError) {
       console.warn('OPTIONS request failed, potential CORS issue:', corsError);
       // Continue anyway, as the actual request might still work
     }
     
-    const response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
-      headers: { 
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Accept': 'application/json'
-      },
-      cache: 'no-store'
-    });
+    // Attempt the actual health check with several retries
+    let response;
+    let retryCount = 0;
+    const maxFetchRetries = 2;
+    
+    while (retryCount <= maxFetchRetries) {
+      try {
+        response = await fetchWithTimeout(`${API_BASE_URL}/health${cacheBuster}`, {
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Accept': 'application/json'
+          },
+          cache: 'no-store',
+          credentials: 'include'
+        });
+        break; // Success, exit the retry loop
+      } catch (fetchError) {
+        retryCount++;
+        if (retryCount <= maxFetchRetries) {
+          console.log(`Fetch attempt ${retryCount} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between retries
+        } else {
+          throw fetchError; // Re-throw after all retries failed
+        }
+      }
+    }
+    
+    // Ensure we got a response
+    if (!response) {
+      throw new Error('No response from health check after retries');
+    }
     
     // Response checks are now done in fetchWithTimeout
     const data = await response.json();
@@ -621,7 +661,8 @@ export const getDbConnection = async () => {
         'Expires': '0',
         'Accept': 'application/json'
       },
-      cache: 'no-store'
+      cache: 'no-store',
+      credentials: 'include'
     });
     
     const data = await response.json();
