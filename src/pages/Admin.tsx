@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { SHA256 } from "crypto-js";
@@ -21,6 +22,7 @@ const Admin = () => {
   const navigate = useNavigate();
   
   const initializationDone = useRef(false);
+  const isRemoteEnvironment = databaseService.isRemoteDevelopment();
 
   useEffect(() => {
     if (initializationDone.current) return;
@@ -65,24 +67,18 @@ const Admin = () => {
     }
   }, [adminConfig, isLoading]);
 
-  const getApiHealthUrl = () => {
-    if (window.location.hostname.includes('lovableproject.com')) {
-      return 'http://localhost:3030/api/health';
-    }
-    return '/api/health';
-  };
-
   const checkDatabaseHealth = async () => {
     try {
-      const url = `${getApiHealthUrl()}?_=${Date.now()}`;
+      const url = `${databaseService.getApiHealthUrl()}?_=${Date.now()}`;
       console.log('Checking backend health at:', url);
       
-      if (window.location.hostname.includes('lovableproject.com')) {
+      if (isRemoteEnvironment) {
         try {
           const response = await fetch(url, {
             headers: {
               'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Accept': 'application/json'
+              'Accept': 'application/json',
+              'Origin': window.location.origin
             },
             mode: 'cors',
             credentials: 'omit'
@@ -95,6 +91,13 @@ const Admin = () => {
             return data;
           } else {
             console.error('Health check failed:', response.status);
+            try {
+              // Try to get error text if available
+              const errorText = await response.text();
+              console.error('Error response:', errorText);
+            } catch (e) {
+              // Ignore error text extraction failure
+            }
             return null;
           }
         } catch (error) {
@@ -136,26 +139,36 @@ const Admin = () => {
     try {
       const healthData = await checkDatabaseHealth();
       
-      if (healthData) {
-        const dbStatus = await databaseService.getDbConnection();
-        if (loadData) {
-          await loadData();
-          
-          const finalHealth = await checkDatabaseHealth();
-          
-          if (finalHealth && finalHealth.dbConnected) {
-            toast.success("Conexão reestabelecida com sucesso!");
-            setTimeout(() => window.location.reload(), 1000);
-          } else {
-            toast.error("Erro ao reconectar ao banco de dados", {
-              description: finalHealth?.dbError?.message || "Verifique a configuração do banco de dados"
-            });
-          }
+      // Check if the backend is responding at all
+      if (!healthData) {
+        if (isRemoteEnvironment) {
+          toast.error("Não foi possível acessar o servidor local", {
+            description: "Verifique se o servidor backend está em execução na porta 3030"
+          });
+        } else {
+          toast.error("API do servidor não está respondendo", {
+            description: "Verifique se o servidor backend está em execução"
+          });
         }
-      } else {
-        toast.error("API do servidor não está respondendo", {
-          description: "Verifique se o servidor backend está em execução"
-        });
+        setIsConnecting(false);
+        return;
+      }
+      
+      // If we got here, we can at least talk to the backend
+      const dbStatus = await databaseService.getDbConnection();
+      if (loadData) {
+        await loadData();
+        
+        const finalHealth = await checkDatabaseHealth();
+        
+        if (finalHealth && finalHealth.dbConnected) {
+          toast.success("Conexão reestabelecida com sucesso!");
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          toast.error("Erro ao reconectar ao banco de dados", {
+            description: finalHealth?.dbError?.message || "Verifique a configuração do banco de dados"
+          });
+        }
       }
     } catch (error) {
       console.error("Erro ao reconectar:", error);
@@ -220,7 +233,7 @@ const Admin = () => {
                 O aplicativo está usando armazenamento local como fallback.
               </p>
               
-              {window.location.hostname.includes('lovableproject.com') && (
+              {isRemoteEnvironment && (
                 <div className="mt-2 p-3 bg-destructive/10 rounded text-sm">
                   <p className="font-semibold flex items-center">
                     <ExternalLink className="h-4 w-4 mr-1.5" />
@@ -255,7 +268,7 @@ const Admin = () => {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => window.open(getApiHealthUrl(), '_blank')}
+                  onClick={() => window.open(databaseService.getApiHealthUrl(), '_blank')}
                 >
                   Verificar API
                 </Button>

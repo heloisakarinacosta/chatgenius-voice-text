@@ -1,33 +1,38 @@
-
 import * as localDb from './localStorageDb';
 
-// Base URL for the API
+// Enhanced API base URL function that robustly handles both development and production environments
 const getApiBaseUrl = () => {
-  if (process.env.NODE_ENV === 'production') {
-    // In production, we should use a relative URL to ensure requests go to the same server
+  // Detection for remote development environments
+  const isLovableRemote = window.location.hostname.includes('lovableproject.com');
+  
+  // In production mode
+  if (process.env.NODE_ENV === 'production' && !isLovableRemote) {
+    // In true production, use relative URL to ensure requests go to the same server
     return '/api';
-  } else {
-    // In development, use the direct URL to the backend server
-    // Add a conditional check for remote development environment (lovable.dev)
-    if (window.location.hostname.includes('lovableproject.com')) {
-      return 'http://localhost:3030/api';  // Connect directly to local backend
-    }
-    return '/api';  // Use vite proxy in local development
   }
+  
+  // For lovable.dev remote development
+  if (isLovableRemote) {
+    // Always try to connect to localhost:3030 for remote development
+    return 'http://localhost:3030/api';
+  }
+  
+  // Regular local development
+  return '/api';  // Use vite proxy in local development
 };
 
 const API_BASE_URL = getApiBaseUrl();
 
 // Log the API base URL to help with debugging
 console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV || 'development'} environment)`);
+console.log(`Running on hostname: ${window.location.hostname}`);
 
 // Configuration for fetch requests
 const FETCH_TIMEOUT = 15000; // 15 seconds timeout (increased from 10)
 const MAX_RETRIES = 3;     
 const RETRY_DELAY = 1000;  // 1 second between retries
 
-// This file serves as a facade over actual database implementations
-// It will use either the API connection (to the backend) or localStorage as a fallback
+// Database connection state
 let isDbConnected = false;
 let connectionAttempted = false;
 let connectionRetryCount = 0;
@@ -45,13 +50,17 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   try {
     console.log(`Fetching from URL: ${url}`);
     
-    // If we're on lovableproject.com, disable credentials mode and allow CORS
-    const credentials = window.location.hostname.includes('lovableproject.com') ? 'omit' : 'include';
+    // Check if we're on lovableproject.com to adjust CORS settings
+    const isLovableRemote = window.location.hostname.includes('lovableproject.com');
+    
+    // Set appropriate credentials mode based on environment
+    const credentials = isLovableRemote ? 'omit' : 'include';
     
     // Ensure we always set the proper headers
     const headers = {
       'Accept': 'application/json',
       'Cache-Control': 'no-cache',
+      'Origin': window.location.origin,
       ...(options.headers || {})
     };
     
@@ -60,10 +69,8 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
       ...options, 
       signal,
       headers,
-      // Credentials depends on environment
       credentials,
-      // Add mode: 'cors' for cross-origin requests
-      mode: 'cors'
+      mode: isLovableRemote ? 'cors' : undefined // Only set mode for cross-origin requests
     });
     
     clearTimeout(timeoutId);
@@ -223,6 +230,19 @@ export const initDatabase = async () => {
     isDbConnected = false;
     return false;
   }
+};
+
+// Helper function to detect remote environment
+export const isRemoteDevelopment = () => {
+  return window.location.hostname.includes('lovableproject.com');
+};
+
+// Get health check URL based on environment
+export const getApiHealthUrl = () => {
+  if (isRemoteDevelopment()) {
+    return 'http://localhost:3030/api/health';
+  }
+  return `${API_BASE_URL}/health`;
 };
 
 // Widget configuration functions
@@ -650,7 +670,7 @@ export const removeTrainingFile = async (id: string) => {
   return true;
 };
 
-// Get database connection status
+// Get database connection status with improved remote handling
 export const getDbConnection = async () => {
   // Prevent duplicate concurrent requests
   const requestId = `db-connection-${Date.now()}`;
@@ -664,25 +684,30 @@ export const getDbConnection = async () => {
     // Add cache busting parameter
     const cacheBuster = `?_=${Date.now()}`;
     
-    // For lovableproject.com, use direct localhost URL and mode: 'cors'
-    const url = `${API_BASE_URL}/health${cacheBuster}`;
+    // Determine the appropriate health check URL
+    const url = getApiHealthUrl() + cacheBuster;
     console.log(`Checking database connection at: ${url}`);
     
-    // Special handling for lovableproject.com
-    if (window.location.hostname.includes('lovableproject.com')) {
+    // For remote development environment (lovableproject.com)
+    if (isRemoteDevelopment()) {
       try {
+        console.log('Using remote development connection mode');
         // Use fetch directly with mode: 'cors' and credentials: 'omit'
         const response = await fetch(url, {
           headers: { 
             'Accept': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Origin': window.location.origin
           },
           mode: 'cors',
           credentials: 'omit'
         });
         
         if (!response.ok) {
-          throw new Error(`Health check failed: ${response.status}`);
+          console.error(`Health check failed with status: ${response.status}`);
+          isDbConnected = false;
+          inProgressRequests.delete(requestId);
+          return false;
         }
         
         const data = await response.json();
@@ -691,19 +716,21 @@ export const getDbConnection = async () => {
         inProgressRequests.delete(requestId);
         return data.dbConnected;
       } catch (error) {
-        console.error('Error checking database connection:', error);
+        console.error('Error checking database connection in remote mode:', error);
         isDbConnected = false;
         inProgressRequests.delete(requestId);
         return false;
       }
     }
     
+    // Standard fetch for local development
     const response = await fetchWithTimeout(url, {
       headers: { 
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Origin': window.location.origin
       },
       cache: 'no-store',
       credentials: 'include'
@@ -717,7 +744,7 @@ export const getDbConnection = async () => {
     console.error('Error checking database connection:', error);
     isDbConnected = false;
     inProgressRequests.delete(requestId);
-    return null;
+    return false;
   }
 };
 

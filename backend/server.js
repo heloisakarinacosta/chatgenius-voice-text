@@ -28,14 +28,18 @@ console.log(`Server will listen on port ${isProduction ? PORT : DEV_PORT}`);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// CORS configuration - Simplified and more permissive for development
+// Enhanced CORS configuration that works in all environments
 app.use(cors({
-  origin: '*', // Allow all origins in development
+  // Allow all origins by default (development friendly)
+  origin: function(origin, callback) {
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'Expires'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'Expires', 'Origin'],
   credentials: true,
   preflightContinue: false,
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 204,
+  maxAge: 86400 // 24 hours cache for preflight requests
 }));
 
 // Add debug headers middleware
@@ -44,9 +48,9 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('origin') || 'unknown'}`);
   
   // Add response headers for CORS
-  res.header('Access-Control-Allow-Origin', '*'); // More permissive for development
+  res.header('Access-Control-Allow-Origin', req.get('origin') || '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires, Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
   
   // Set JSON content type for all API responses
@@ -57,10 +61,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Handle preflight OPTIONS requests
+// Special handling for OPTIONS requests
 app.options('*', (req, res) => {
-  console.log(`Handling OPTIONS request for ${req.path}`);
-  res.status(204).end();
+  console.log(`Handling OPTIONS request for ${req.path} from origin: ${req.get('origin')}`);
+  res.status(204).set({
+    'Access-Control-Allow-Origin': req.get('origin') || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires, Origin',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age': '86400'
+  }).end();
 });
 
 // Health check route - independent of database
@@ -71,6 +81,7 @@ app.get('/api/health', (req, res) => {
     const lastError = db.getLastConnectionError ? db.getLastConnectionError() : null;
     
     console.log(`Health check called - Database connected: ${dbStatus}`);
+    console.log(`Health check origin: ${req.get('origin') || 'unknown'}`);
     
     // Format error for safe JSON response
     let errorInfo = null;
@@ -105,7 +116,8 @@ app.get('/api/health', (req, res) => {
          'Cache-Control': 'no-cache, no-store, must-revalidate',
          'Pragma': 'no-cache',
          'Expires': '0',
-         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+         'Access-Control-Allow-Origin': req.get('origin') || '*', 
+         'Access-Control-Allow-Credentials': 'true'
        })
        .json(response);
   } catch (error) {
@@ -113,7 +125,8 @@ app.get('/api/health', (req, res) => {
     res.status(500)
        .set({
          'Content-Type': 'application/json',
-         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+         'Access-Control-Allow-Origin': req.get('origin') || '*',
+         'Access-Control-Allow-Credentials': 'true'
        })
        .json({ 
          status: 'error', 
@@ -144,7 +157,8 @@ app.use((err, req, res, next) => {
   res.status(500)
      .set({
        'Content-Type': 'application/json',
-       'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+       'Access-Control-Allow-Origin': req.get('origin') || '*',
+       'Access-Control-Allow-Credentials': 'true'
      })
      .json({ error: err.message || 'Internal Server Error' });
 });
