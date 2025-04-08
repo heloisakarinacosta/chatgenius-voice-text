@@ -2,22 +2,12 @@ import * as localDb from './localStorageDb';
 
 // Enhanced API base URL function that robustly handles both development and production environments
 const getApiBaseUrl = () => {
-  // Detection for remote development environments
-  const isLovableRemote = window.location.hostname.includes('lovableproject.com');
-  
-  // In production mode
-  if (process.env.NODE_ENV === 'production' && !isLovableRemote) {
-    // In true production, use relative URL to ensure requests go to the same server
+  // In production mode, use relative URL to ensure requests go to the same server
+  if (process.env.NODE_ENV === 'production') {
     return '/api';
   }
   
-  // For lovable.dev remote development
-  if (isLovableRemote) {
-    // Always try to connect to localhost:3030 for remote development
-    return 'http://localhost:3030/api';
-  }
-  
-  // Regular local development
+  // For development
   return '/api';  // Use vite proxy in local development
 };
 
@@ -28,7 +18,7 @@ console.log(`API base URL configured as: ${API_BASE_URL} (${process.env.NODE_ENV
 console.log(`Running on hostname: ${window.location.hostname}`);
 
 // Configuration for fetch requests
-const FETCH_TIMEOUT = 15000; // 15 seconds timeout (increased from 10)
+const FETCH_TIMEOUT = 15000; // 15 seconds timeout
 const MAX_RETRIES = 3;     
 const RETRY_DELAY = 1000;  // 1 second between retries
 
@@ -50,11 +40,8 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
   try {
     console.log(`Fetching from URL: ${url}`);
     
-    // Check if we're on lovableproject.com to adjust CORS settings
-    const isLovableRemote = window.location.hostname.includes('lovableproject.com');
-    
-    // Set appropriate credentials mode based on environment
-    const credentials = isLovableRemote ? 'omit' : 'include';
+    // Set appropriate credentials mode (always include credentials)
+    const credentials = 'include';
     
     // Ensure we always set the proper headers
     const headers = {
@@ -69,8 +56,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
       ...options, 
       signal,
       headers,
-      credentials,
-      mode: isLovableRemote ? 'cors' : undefined // Only set mode for cross-origin requests
+      credentials
     });
     
     clearTimeout(timeoutId);
@@ -157,8 +143,7 @@ export const initDatabase = async () => {
         method: 'OPTIONS',
         headers: {
           'Accept': 'application/json'
-        },
-        credentials: 'include'
+        }
       });
       
       if (optionsResp.ok) {
@@ -185,8 +170,7 @@ export const initDatabase = async () => {
             'Expires': '0',
             'Accept': 'application/json'
           },
-          cache: 'no-store',
-          credentials: 'include'
+          cache: 'no-store'
         });
         break; // Success, exit the retry loop
       } catch (fetchError) {
@@ -232,16 +216,8 @@ export const initDatabase = async () => {
   }
 };
 
-// Helper function to detect remote environment
-export const isRemoteDevelopment = () => {
-  return window.location.hostname.includes('lovableproject.com');
-};
-
-// Get health check URL based on environment
+// Get health check URL
 export const getApiHealthUrl = () => {
-  if (isRemoteDevelopment()) {
-    return 'http://localhost:3030/api/health';
-  }
   return `${API_BASE_URL}/health`;
 };
 
@@ -670,7 +646,7 @@ export const removeTrainingFile = async (id: string) => {
   return true;
 };
 
-// Get database connection status with improved remote handling
+// Get database connection status
 export const getDbConnection = async () => {
   // Prevent duplicate concurrent requests
   const requestId = `db-connection-${Date.now()}`;
@@ -688,42 +664,7 @@ export const getDbConnection = async () => {
     const url = getApiHealthUrl() + cacheBuster;
     console.log(`Checking database connection at: ${url}`);
     
-    // For remote development environment (lovableproject.com)
-    if (isRemoteDevelopment()) {
-      try {
-        console.log('Using remote development connection mode');
-        // Use fetch directly with mode: 'cors' and credentials: 'omit'
-        const response = await fetch(url, {
-          headers: { 
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Origin': window.location.origin
-          },
-          mode: 'cors',
-          credentials: 'omit'
-        });
-        
-        if (!response.ok) {
-          console.error(`Health check failed with status: ${response.status}`);
-          isDbConnected = false;
-          inProgressRequests.delete(requestId);
-          return false;
-        }
-        
-        const data = await response.json();
-        console.log('Health check response:', data);
-        isDbConnected = data.dbConnected && data.status === 'ok';
-        inProgressRequests.delete(requestId);
-        return data.dbConnected;
-      } catch (error) {
-        console.error('Error checking database connection in remote mode:', error);
-        isDbConnected = false;
-        inProgressRequests.delete(requestId);
-        return false;
-      }
-    }
-    
-    // Standard fetch for local development
+    // Standard fetch 
     const response = await fetchWithTimeout(url, {
       headers: { 
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -732,8 +673,7 @@ export const getDbConnection = async () => {
         'Accept': 'application/json',
         'Origin': window.location.origin
       },
-      cache: 'no-store',
-      credentials: 'include'
+      cache: 'no-store'
     });
     
     const data = await response.json();
@@ -752,3 +692,18 @@ export const getDbConnection = async () => {
 export const isConnected = () => {
   return isDbConnected;
 };
+
+// Export all the other functions from localDb to maintain compatibility
+export const {
+  updateWidgetConfig,
+  getAgentConfig,
+  updateAgentConfig,
+  getAdminConfig,
+  updateAdminConfig,
+  getConversations,
+  createConversation,
+  addMessage,
+  getTrainingFiles,
+  addTrainingFile,
+  removeTrainingFile
+} = localDb;

@@ -48,7 +48,7 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.get('origin') || 'unknown'}`);
   
   // Add response headers for CORS
-  res.header('Access-Control-Allow-Origin', req.get('origin') || '*');
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires, Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -65,7 +65,7 @@ app.use((req, res, next) => {
 app.options('*', (req, res) => {
   console.log(`Handling OPTIONS request for ${req.path} from origin: ${req.get('origin')}`);
   res.status(204).set({
-    'Access-Control-Allow-Origin': req.get('origin') || '*',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires, Origin',
     'Access-Control-Allow-Credentials': 'true',
@@ -116,7 +116,7 @@ app.get('/api/health', (req, res) => {
          'Cache-Control': 'no-cache, no-store, must-revalidate',
          'Pragma': 'no-cache',
          'Expires': '0',
-         'Access-Control-Allow-Origin': req.get('origin') || '*', 
+         'Access-Control-Allow-Origin': '*', 
          'Access-Control-Allow-Credentials': 'true'
        })
        .json(response);
@@ -125,7 +125,7 @@ app.get('/api/health', (req, res) => {
     res.status(500)
        .set({
          'Content-Type': 'application/json',
-         'Access-Control-Allow-Origin': req.get('origin') || '*',
+         'Access-Control-Allow-Origin': '*',
          'Access-Control-Allow-Credentials': 'true'
        })
        .json({ 
@@ -157,10 +157,20 @@ app.use((err, req, res, next) => {
   res.status(500)
      .set({
        'Content-Type': 'application/json',
-       'Access-Control-Allow-Origin': req.get('origin') || '*',
+       'Access-Control-Allow-Origin': '*',
        'Access-Control-Allow-Credentials': 'true'
      })
      .json({ error: err.message || 'Internal Server Error' });
+});
+
+// Handle API 404s separately to ensure they return JSON
+app.use('/api/*', (req, res) => {
+  res.status(404)
+     .set({
+       'Content-Type': 'application/json',
+       'Access-Control-Allow-Origin': '*'
+     })
+     .json({ error: 'API route not found' });
 });
 
 // Serve static files if in production
@@ -183,14 +193,7 @@ if (isProduction) {
 
 // Catch-all route handler for unhandled routes
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) {
-    res.status(404)
-       .set({
-         'Content-Type': 'application/json',
-         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
-       })
-       .json({ error: 'API route not found' });
-  } else if (isProduction) {
+  if (isProduction) {
     // In production, redirect to index.html for client-side routing
     res.sendFile(path.resolve(__dirname, '../dist', 'index.html'));
   } else {
@@ -198,7 +201,7 @@ app.use((req, res, next) => {
     res.status(404)
        .set({
          'Content-Type': 'application/json',
-         'Access-Control-Allow-Origin': '*' // Ensure CORS headers are present
+         'Access-Control-Allow-Origin': '*'
        })
        .json({ error: 'Route not found' });
   }
