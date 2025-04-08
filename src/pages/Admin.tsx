@@ -5,10 +5,11 @@ import { SHA256 } from "crypto-js";
 import LoginForm from "@/components/LoginForm";
 import AdminPanel from "@/components/AdminPanel";
 import { useChat } from "@/contexts/ChatContext";
-import { AlertTriangle } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle, Database, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import * as databaseService from "@/services/databaseService";
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -16,6 +17,7 @@ const Admin = () => {
   const [apiKey, setApiKey] = useState("");
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
   const { adminConfig, loadData, isDbConnected } = useChat();
   const navigate = useNavigate();
   
@@ -46,6 +48,9 @@ const Admin = () => {
           console.log('No API key found in admin config');
         }
         
+        // Check database connection health
+        await checkDatabaseHealth();
+        
         initializationDone.current = true;
       } catch (error) {
         console.error('Error initializing admin page:', error);
@@ -75,6 +80,33 @@ const Admin = () => {
     return '/api/health';
   };
 
+  // Check database health and get diagnostic information
+  const checkDatabaseHealth = async () => {
+    try {
+      const response = await fetch(`${getApiHealthUrl()}?_=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Health check response:', data);
+        setDiagnosticInfo(data);
+        return data;
+      } else {
+        console.error('Health check failed:', response.status);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error checking database health:', error);
+      return null;
+    }
+  };
+
   // Refresh page to check connection status
   const refreshPage = () => {
     window.location.reload();
@@ -84,14 +116,38 @@ const Admin = () => {
   const forceReconnect = async () => {
     setIsConnecting(true);
     try {
-      if (loadData) {
-        await loadData();
-        toast.success("Conexão reestabelecida com sucesso!");
-        setTimeout(() => window.location.reload(), 1000);
+      // First check the health of the API
+      const healthData = await checkDatabaseHealth();
+      
+      if (healthData) {
+        // API is responsive, now try to reconnect to database
+        const dbStatus = await databaseService.getDbConnection();
+        if (loadData) {
+          await loadData();
+          
+          // Final check to see if we're connected
+          const finalHealth = await checkDatabaseHealth();
+          
+          if (finalHealth && finalHealth.dbConnected) {
+            toast.success("Conexão reestabelecida com sucesso!");
+            setTimeout(() => window.location.reload(), 1000);
+          } else {
+            // Show diagnostic info
+            toast.error("Erro ao reconectar ao banco de dados", {
+              description: finalHealth?.dbError?.message || "Verifique a configuração do banco de dados"
+            });
+          }
+        }
+      } else {
+        toast.error("API do servidor não está respondendo", {
+          description: "Verifique se o servidor backend está em execução"
+        });
       }
     } catch (error) {
       console.error("Erro ao reconectar:", error);
-      toast.error("Erro ao reconectar");
+      toast.error("Erro ao reconectar", {
+        description: error instanceof Error ? error.message : "Erro desconhecido"
+      });
     } finally {
       setIsConnecting(false);
     }
@@ -142,12 +198,32 @@ const Admin = () => {
       {!isDbConnected && (
         <Alert variant="destructive" className="max-w-4xl mx-auto mt-4">
           <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Problema de Conexão</AlertTitle>
           <AlertDescription>
             <div className="flex flex-col gap-2">
               <p>
                 Não foi possível conectar ao servidor de banco de dados. 
                 O aplicativo está usando armazenamento local como fallback.
               </p>
+              
+              {diagnosticInfo && diagnosticInfo.dbError && (
+                <div className="mt-2 p-3 bg-destructive/10 rounded text-sm">
+                  <p className="font-semibold">Erro de conexão:</p>
+                  <p>{diagnosticInfo.dbError.message}</p>
+                  {diagnosticInfo.dbError.code && (
+                    <p className="mt-1"><span className="font-semibold">Código:</span> {diagnosticInfo.dbError.code}</p>
+                  )}
+                  {diagnosticInfo.dbConfig && (
+                    <div className="mt-2">
+                      <p className="font-semibold">Configuração:</p>
+                      <p>Host: {diagnosticInfo.dbConfig.host}</p>
+                      <p>DB: {diagnosticInfo.dbConfig.database}</p>
+                      <p>Usuário: {diagnosticInfo.dbConfig.user}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <div className="flex gap-2 mt-2">
                 <Button 
                   variant="outline" 
@@ -161,6 +237,7 @@ const Admin = () => {
                   size="sm" 
                   onClick={refreshPage}
                 >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                   Atualizar página
                 </Button>
                 <Button 
@@ -175,7 +252,10 @@ const Admin = () => {
                       Reconectando...
                     </span>
                   ) : (
-                    "Forçar reconexão"
+                    <>
+                      <Database className="h-3.5 w-3.5 mr-1.5" />
+                      Forçar reconexão
+                    </>
                   )}
                 </Button>
               </div>
@@ -208,6 +288,7 @@ const Admin = () => {
           apiKey={apiKey} 
           setApiKey={handleApiKeySave} 
           isAuthenticated={isAuthenticated} 
+          diagnosticInfo={diagnosticInfo}
         />
       )}
     </div>

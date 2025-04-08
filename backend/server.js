@@ -54,17 +54,37 @@ app.use('/api', (req, res, next) => {
 
 // Health check route - independent of database
 app.get('/api/health', (req, res) => {
-  // Respond even if database isn't connected
+  // Get database connection details for diagnosis
   const dbStatus = db.isConnected ? db.isConnected() : false;
+  const lastError = db.getLastConnectionError ? db.getLastConnectionError() : null;
+  
   console.log(`Health check called - Database connected: ${dbStatus}`);
   
+  // Format error for safe JSON response
+  let errorInfo = null;
+  if (lastError) {
+    errorInfo = {
+      code: lastError.code || 'UNKNOWN_ERROR',
+      message: lastError.message || 'Unknown database error',
+      sqlMessage: lastError.sqlMessage || null,
+      sqlState: lastError.sqlState || null
+    };
+    console.log('Last DB connection error:', errorInfo);
+  }
+  
+  // Enhanced response with detailed error information
   res.status(200)
-     .set('Content-Type', 'application/json')
      .json({ 
         status: 'ok', 
         server: true,
         dbConnected: dbStatus,
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        dbConfig: {
+          host: process.env.DB_HOST || process.env.DEV_DB_HOST || '(not set)',
+          database: process.env.DB_NAME || process.env.DEV_DB_NAME || '(not set)',
+          user: process.env.DB_USER || process.env.DEV_DB_USER || '(not set)'
+        },
+        dbError: errorInfo
      });
 });
 
