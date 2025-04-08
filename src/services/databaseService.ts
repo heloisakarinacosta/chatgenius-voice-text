@@ -1,3 +1,4 @@
+
 import * as localDb from './localStorageDb';
 
 // Enhanced API base URL function that robustly handles both development and production environments
@@ -263,13 +264,20 @@ export const getDbConnection = async () => {
   }
 };
 
+// Flag to check for remote development environment
+export const isRemoteDevelopment = () => {
+  return window.location.hostname.includes('.lovableproject.com') || 
+         window.location.hostname.includes('.gitpod.io') ||
+         window.location.hostname.includes('.codespaces.');
+};
+
 // Check if database is connected
 export const isConnected = () => {
   return isDbConnected;
 };
 
 // Export all functions from localDb to maintain compatibility
-export {
+export const {
   getWidgetConfig,
   updateWidgetConfig,
   getAgentConfig,
@@ -282,7 +290,4 @@ export {
   getTrainingFiles,
   addTrainingFile,
   removeTrainingFile
-} from './localStorageDb';
-
-// Extended API functions that override localDb functions when database is connected
-// These functions are only exported if they're defined locally and not just re-exported from localDb
+} = localDb;

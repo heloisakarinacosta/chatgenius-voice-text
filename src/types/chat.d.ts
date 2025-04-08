@@ -73,10 +73,10 @@ export interface AgentConfig {
   functions: AgentFunction[];
   voice: VoiceConfig;
   trainingFiles: TrainingFile[];
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  detectEmotion?: boolean;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  detectEmotion: boolean;
   knowledgeType: KnowledgeType;
   rag: {
     enabled: boolean;
