@@ -61,7 +61,7 @@ export const ChatContext = createContext<ChatContextType>({
       endCallMessage: "Encerrando chamada por inatividade. Obrigado pela conversa."
     },
     trainingFiles: [],
-    model: "gpt-4o",
+    model: "gpt-4o", 
     temperature: 0.7,
     maxTokens: 1000,
     detectEmotion: false,
@@ -338,10 +338,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       });
       
-      // Also add the message to the database if not a duplicate
-      database.addMessage(currentConversationId, newMessage).catch(err => {
+      // Fix for the TypeScript error - don't use catch on a boolean
+      try {
+        // Add the message to the database if not a duplicate
+        const success = database.addMessage(currentConversationId, newMessage);
+        if (!success) {
+          console.error("Failed to add message to database");
+        }
+      } catch (err) {
         console.error("Error adding message to database:", err);
-      });
+      }
     }
     
     return messageId;
