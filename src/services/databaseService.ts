@@ -1,5 +1,6 @@
 
 import * as localDb from './localStorageDb';
+import { WidgetConfig, AgentConfig, AdminConfig, Message, Conversation, TrainingFile } from "@/types/chat";
 
 // Enhanced API base URL function that robustly handles both development and production environments
 const getApiBaseUrl = () => {
@@ -109,7 +110,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
 };
 
 // Initialize database connection - this will try to connect to the backend API
-export const initDatabase = async () => {
+export const initDatabase = async (): Promise<boolean> => {
   // Check if we've already tried recently to avoid hammering the server
   const now = Date.now();
   if (connectionAttempted && (now - lastConnectionAttempt) < RETRY_DELAY) {
@@ -226,7 +227,7 @@ export const getApiHealthUrl = () => {
 };
 
 // Get database connection status
-export const getDbConnection = async () => {
+export const getDbConnection = async (): Promise<boolean> => {
   // Prevent duplicate concurrent requests
   const requestId = `db-connection-${Date.now()}`;
   if (inProgressRequests.has(requestId)) {
@@ -280,18 +281,16 @@ export const isConnected = () => {
   return isDbConnected;
 };
 
-// Export all functions from localDb to maintain compatibility
-export const {
-  getWidgetConfig,
-  updateWidgetConfig,
-  getAgentConfig,
-  updateAgentConfig,
-  getAdminConfig,
-  updateAdminConfig,
-  getConversations,
-  createConversation,
-  addMessage,
-  getTrainingFiles,
-  addTrainingFile,
-  removeTrainingFile
-} = localDb;
+// Export type-safe versions of all functions from localDb
+export const getWidgetConfig = (): WidgetConfig => localDb.getWidgetConfig();
+export const updateWidgetConfig = (config: WidgetConfig): boolean => localDb.updateWidgetConfig(config);
+export const getAgentConfig = (): AgentConfig => localDb.getAgentConfig();
+export const updateAgentConfig = (config: AgentConfig): boolean => localDb.updateAgentConfig(config);
+export const getAdminConfig = (): AdminConfig => localDb.getAdminConfig();
+export const updateAdminConfig = (config: AdminConfig): boolean => localDb.updateAdminConfig(config);
+export const getConversations = (): Conversation[] => localDb.getConversations();
+export const createConversation = (id: string): boolean => localDb.createConversation(id);
+export const addMessage = (conversationId: string, message: Message): boolean => localDb.addMessage(conversationId, message);
+export const getTrainingFiles = (): TrainingFile[] => localDb.getTrainingFiles();
+export const addTrainingFile = (file: TrainingFile): boolean => localDb.addTrainingFile(file);
+export const removeTrainingFile = (id: string): boolean => localDb.removeTrainingFile(id);

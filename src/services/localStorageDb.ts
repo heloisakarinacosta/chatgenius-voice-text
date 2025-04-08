@@ -1,57 +1,6 @@
 
 // Local storage fallback implementation for database operations
-
-export interface WidgetConfig {
-  position: "top-right" | "top-left" | "bottom-right" | "bottom-left" | "center-right" | "center-left";
-  title: string;
-  subtitle: string;
-  primaryColor: string;
-  iconType: "chat" | "support" | "help";
-}
-
-export interface AgentConfig {
-  systemPrompt: string;
-  functions: Array<{
-    name: string;
-    description: string;
-    parameters: Record<string, any>;
-    webhook: string;
-  }>;
-  voice: {
-    enabled: boolean;
-    voiceId: string;
-    language: string;
-    latency: number;
-  };
-  trainingFiles: Array<{
-    id: string;
-    name: string;
-    content: string;
-    size: number;
-    type: string;
-    timestamp: Date;
-  }>;
-}
-
-export interface AdminConfig {
-  username: string;
-  passwordHash: string;
-  apiKey: string;
-}
-
-export interface Message {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: Date;
-}
-
-export interface Conversation {
-  id: string;
-  messages: Message[];
-  isActive: boolean;
-  createdAt: Date;
-}
+import { WidgetConfig, AgentConfig, AdminConfig, Message, Conversation, TrainingFile } from "@/types/chat";
 
 // Default configurations
 const defaultWidgetConfig: WidgetConfig = {
@@ -72,6 +21,14 @@ const defaultAgentConfig: AgentConfig = {
     latency: 100,
   },
   trainingFiles: [],
+  model: "gpt-4o",
+  temperature: 0.7,
+  maxTokens: 1000,
+  detectEmotion: false,
+  knowledgeType: 'rag',
+  rag: { enabled: true },
+  fineTuning: { enabled: false, modelId: '', status: 'not_started' },
+  assistant: { enabled: false, assistantId: '', name: '' }
 };
 
 const defaultAdminConfig: AdminConfig = {
@@ -114,7 +71,27 @@ export const getAgentConfig = (): AgentConfig => {
       }));
     }
     
-    return parsedConfig;
+    // Ensure all required fields are present by merging with defaults
+    return {
+      ...defaultAgentConfig,
+      ...parsedConfig,
+      voice: {
+        ...defaultAgentConfig.voice,
+        ...(parsedConfig.voice || {})
+      },
+      rag: {
+        ...defaultAgentConfig.rag,
+        ...(parsedConfig.rag || {})
+      },
+      fineTuning: {
+        ...defaultAgentConfig.fineTuning,
+        ...(parsedConfig.fineTuning || {})
+      },
+      assistant: {
+        ...defaultAgentConfig.assistant,
+        ...(parsedConfig.assistant || {})
+      }
+    };
   }
   return defaultAgentConfig;
 };
@@ -131,7 +108,7 @@ export const updateAgentConfig = (config: AgentConfig): boolean => {
 };
 
 // Get admin configuration from localStorage
-export const getAdminConfig = () => {
+export const getAdminConfig = (): AdminConfig => {
   const adminConfig = localStorage.getItem('adminConfig');
   
   if (!adminConfig) {
@@ -152,7 +129,7 @@ export const getAdminConfig = () => {
 };
 
 // Save admin configuration to localStorage
-export const updateAdminConfig = (config: AdminConfig) => {
+export const updateAdminConfig = (config: AdminConfig): boolean => {
   try {
     localStorage.setItem('adminConfig', JSON.stringify({
       username: config.username || 'admin',
@@ -224,13 +201,13 @@ export const addMessage = (conversationId: string, message: Message): boolean =>
 };
 
 // Get training files from localStorage
-export const getTrainingFiles = () => {
+export const getTrainingFiles = (): TrainingFile[] => {
   const config = getAgentConfig();
   return config.trainingFiles || [];
 };
 
 // Add a training file in localStorage
-export const addTrainingFile = (file: any): boolean => {
+export const addTrainingFile = (file: TrainingFile): boolean => {
   try {
     const config = getAgentConfig();
     config.trainingFiles.push(file);
